@@ -2,28 +2,34 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::{Command, ExitCode};
 
-pub struct App;
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+
+#[derive(Parser)]
+#[command(
+    name = "cargo-cleaner",
+    version,
+    about = "Automatic per-project Cargo cleanup"
+)]
+pub struct App {
+    #[command(subcommand)]
+    command: Option<CliCommand>,
+}
 
 impl App {
     const ZSH_INIT: &str = "cargo() {\n    command cargo-cleaner exec -- \"$@\"\n}\n";
 
-    pub fn run(args: Vec<OsString>) -> Result<ExitCode, String> {
-        match args.first().and_then(|arg| arg.to_str()) {
-            Some("init") if args.len() == 2 && args[1] == "zsh" => Self::configure_zsh(true),
-            Some("uninstall") if args.len() == 2 && args[1] == "zsh" => Self::configure_zsh(false),
-            Some("exec") if args.get(1).is_some_and(|arg| arg == "--") => Self::forward(&args[2..]),
-            Some("--version" | "-V") if args.len() == 1 => {
-                Self::print(concat!("cargo-cleaner ", env!("CARGO_PKG_VERSION"), "\n"))
+    pub fn run() -> Result<ExitCode, String> {
+        let app = Self::parse();
+        match app.command {
+            Some(CliCommand::Init { shell: Shell::Zsh }) => Self::configure_zsh(true),
+            Some(CliCommand::Uninstall { shell: Shell::Zsh }) => Self::configure_zsh(false),
+            Some(CliCommand::Exec { args }) => Self::forward(&args),
+            None => {
+                Self::command()
+                    .print_help()
+                    .map_err(|error| format!("failed to write help: {error}"))?;
+                Ok(ExitCode::SUCCESS)
             }
-            None | Some("--help" | "-h") if args.len() <= 1 => Self::print(
-                "Usage: cargo-cleaner init zsh\n       cargo-cleaner uninstall zsh\n       cargo-cleaner exec -- [CARGO_ARGS...]\n\n\
-                 Install shell integration: cargo-cleaner init zsh\n\n\
-                 Configure automatic cleanup in per-project .cargo-cleaner.toml.\n",
-            ),
-            _ => Err(
-                "expected `init zsh`, `uninstall zsh`, or `exec -- [CARGO_ARGS...]`; see --help"
-                    .into(),
-            ),
         }
     }
 
@@ -99,4 +105,28 @@ impl App {
             std::process::exit(code);
         }
     }
+}
+
+#[derive(Subcommand)]
+enum CliCommand {
+    /// Install shell integration in the shell configuration file.
+    Init {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Remove shell integration from the shell configuration file.
+    Uninstall {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Run Cargo, checking cleanup thresholds before build commands.
+    Exec {
+        #[arg(last = true, value_name = "CARGO_ARGS")]
+        args: Vec<OsString>,
+    },
+}
+
+#[derive(Clone, ValueEnum)]
+enum Shell {
+    Zsh,
 }

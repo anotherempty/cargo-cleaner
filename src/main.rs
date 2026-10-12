@@ -5,7 +5,7 @@ mod app;
 mod cleanup;
 
 fn main() -> std::process::ExitCode {
-    match app::App::run(std::env::args_os().skip(1).collect()) {
+    match app::App::run() {
         Ok(code) => code,
         Err(error) => {
             eprintln!("cargo-cleaner: {error}");

@@ -8,7 +8,40 @@ fn rejects_unsupported_shell_without_printing_shell_code() {
         .expect("run cleaner");
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("expected `init zsh`"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid value 'fish'"));
+}
+
+#[test]
+fn clap_handles_help_version_and_invalid_commands() {
+    for args in [
+        vec![],
+        vec!["--help"],
+        vec!["init", "--help"],
+        vec!["uninstall", "--help"],
+        vec!["exec", "--help"],
+        vec!["--version"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(args)
+            .output()
+            .expect("run CLI");
+        assert!(output.status.success(), "{output:?}");
+        assert!(!output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+    }
+    for args in [
+        vec!["unknown"],
+        vec!["init"],
+        vec!["uninstall", "fish"],
+        vec!["exec", "build"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(args)
+            .output()
+            .expect("run CLI");
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!output.stderr.is_empty());
+    }
 }
 
 #[cfg(all(unix, test))]
@@ -28,9 +61,11 @@ mod zsh {
 
     impl Fixture {
         fn new() -> Result<Self, Box<dyn std::error::Error>> {
+            static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "cargo-cleaner-shell-test-{}-{}",
+                "cargo-cleaner-shell-test-{}-{}-{}",
                 std::process::id(),
+                NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)?
                     .as_nanos()
