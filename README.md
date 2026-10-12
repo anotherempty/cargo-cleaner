@@ -11,13 +11,16 @@ cargo install --path .
 ```
 
 Ensure Cargo's binary directory (normally `~/.cargo/bin`) is on your `PATH`.
-Add this line to `~/.zshrc`:
+Run setup:
 
 ```sh
-eval "$(cargo-cleaner init zsh)"
+cargo-cleaner init zsh
 ```
 
-Open a new zsh session, or run that line in the current session. Continue using
+Setup writes the Cargo shell function to `~/.zshrc` (or `$ZDOTDIR/.zshrc` when
+set), preserving existing configuration. Repeated setup does not duplicate the
+function, and the previous `eval` initialization line is removed automatically.
+Open a new zsh session to activate it. Continue using
 normal commands such as `cargo build`, `cargo test`, and `cargo +stable check`.
 
 ## Configure each project
@@ -84,8 +87,16 @@ This affects shells that load the function. IDEs and other processes invoking
 Cargo directly do not use it. Existing `cargo` shell functions are replaced;
 remove any `cargo` alias before enabling this integration.
 
-To disable integration, remove the initialization line and open a new shell.
-Use `unfunction cargo` to disable it in the current zsh session. To disable only
+To remove shell integration, run:
+
+```sh
+cargo-cleaner uninstall zsh
+```
+
+This removes the generated function and legacy initialization line from `.zshrc`,
+using the same `ZDOTDIR`/`HOME` selection as setup. Other configuration stays intact;
+repeated removal is safe. The binary and project cleanup configuration remain installed.
+Open a new shell, or use `unfunction cargo` to disable it in the current zsh session. To disable only
 cleanup for a project, leave its `.cargo-cleaner.toml` empty.
 
 ## Development

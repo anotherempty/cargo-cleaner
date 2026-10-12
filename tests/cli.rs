@@ -41,6 +41,98 @@ mod zsh {
     }
 
     #[test]
+    fn init_preserves_config_migrates_legacy_and_is_repeatable() {
+        let fixture = Fixture::new().expect("create fixture");
+        let rc = fixture.0.join(".zshrc");
+        fs::write(
+            &rc,
+            "# keep me\neval \"$(cargo-cleaner init zsh)\"\nexport KEEP=yes",
+        )
+        .expect("write config");
+        for _ in 0..2 {
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                .args(["init", "zsh"])
+                .env("ZDOTDIR", &fixture.0)
+                .env_remove("HOME")
+                .output()
+                .expect("run init");
+            assert!(output.status.success(), "{:?}", output);
+        }
+        assert_eq!(
+            fs::read_to_string(rc).expect("read config"),
+            "# keep me\nexport KEEP=yes\ncargo() {\n    command cargo-cleaner exec -- \"$@\"\n}\n"
+        );
+    }
+
+    #[test]
+    fn init_reports_missing_home_and_unwritable_config() {
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(["init", "zsh"])
+            .env_remove("HOME")
+            .env_remove("ZDOTDIR")
+            .output()
+            .expect("run init");
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("neither ZDOTDIR nor HOME is set")
+        );
+        let fixture = Fixture::new().expect("create fixture");
+        fs::create_dir(fixture.0.join(".zshrc")).expect("create directory");
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(["init", "zsh"])
+            .env("HOME", &fixture.0)
+            .env_remove("ZDOTDIR")
+            .output()
+            .expect("run init");
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("failed to read"));
+    }
+
+    #[test]
+    fn uninstall_removes_integration_preserves_config_and_is_repeatable() {
+        let fixture = Fixture::new().expect("create fixture");
+        let rc = fixture.0.join(".zshrc");
+        let original = "# keep me\ncargo_custom() { echo custom; }\n";
+        fs::write(&rc, original).expect("write config");
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(["init", "zsh"])
+            .env("ZDOTDIR", &fixture.0)
+            .env_remove("HOME")
+            .output()
+            .expect("run init");
+        assert!(output.status.success());
+        let mut contents = fs::read_to_string(&rc).expect("read config");
+        contents.push_str("eval \"$(cargo-cleaner init zsh)\"\n# trailing config\n");
+        fs::write(&rc, contents).expect("write legacy config");
+        for _ in 0..2 {
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                .args(["uninstall", "zsh"])
+                .env("ZDOTDIR", &fixture.0)
+                .env_remove("HOME")
+                .output()
+                .expect("run uninstall");
+            assert!(output.status.success(), "{output:?}");
+            assert_eq!(
+                fs::read_to_string(&rc).expect("read config"),
+                format!("{original}# trailing config\n")
+            );
+        }
+    }
+
+    #[test]
+    fn uninstall_missing_config_does_not_create_file() {
+        let fixture = Fixture::new().expect("create fixture");
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(["uninstall", "zsh"])
+            .env("HOME", &fixture.0)
+            .env_remove("ZDOTDIR")
+            .output()
+            .expect("run uninstall");
+        assert!(output.status.success(), "{output:?}");
+        assert!(!fixture.0.join(".zshrc").exists());
+    }
+
+    #[test]
     fn shell_forwards_arguments_streams_environment_directory_and_status() {
         let fixture = Fixture::new().expect("create fixture");
         let cargo = fixture.0.join("cargo");
@@ -64,7 +156,7 @@ mod zsh {
             .args([
                 "-f",
                 "-c",
-                "eval \"$(cargo-cleaner init zsh)\" || exit; cargo \"$@\"",
+                "cargo-cleaner init zsh >/dev/null || exit; source \"$HOME/.zshrc\" || exit; cargo \"$@\"",
                 "shell-test",
                 "+stable",
                 "build",
@@ -75,6 +167,8 @@ mod zsh {
             ])
             .current_dir(&fixture.0)
             .env("PATH", std::env::join_paths(paths).expect("join PATH"))
+            .env("HOME", &fixture.0)
+            .env_remove("ZDOTDIR")
             .env("CLEANER_TEST_VALUE", "inherited value")
             .output()
             .expect("run zsh; install zsh to run shell integration tests");
