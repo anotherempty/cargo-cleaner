@@ -16,13 +16,11 @@ pub struct App {
 }
 
 impl App {
-    const ZSH_INIT: &str = "cargo() {\n    command cargo-cleaner exec -- \"$@\"\n}\n";
-
     pub fn run() -> Result<ExitCode, String> {
         let app = Self::parse();
         match app.command {
-            Some(CliCommand::Init { shell: Shell::Zsh }) => Self::configure_zsh(true),
-            Some(CliCommand::Uninstall { shell: Shell::Zsh }) => Self::configure_zsh(false),
+            Some(CliCommand::Init { shell }) => Self::print(&shell.integration().setup()?),
+            Some(CliCommand::Uninstall { shell }) => Self::print(&shell.integration().remove()?),
             Some(CliCommand::Exec { args }) => Self::forward(&args),
             None => {
                 Self::command()
@@ -30,48 +28,6 @@ impl App {
                     .map_err(|error| format!("failed to write help: {error}"))?;
                 Ok(ExitCode::SUCCESS)
             }
-        }
-    }
-
-    fn configure_zsh(install: bool) -> Result<ExitCode, String> {
-        let directory = std::env::var_os("ZDOTDIR")
-            .filter(|value| !value.is_empty())
-            .or_else(|| std::env::var_os("HOME").filter(|value| !value.is_empty()))
-            .ok_or("cannot locate .zshrc: neither ZDOTDIR nor HOME is set")?;
-        let path = std::path::PathBuf::from(directory).join(".zshrc");
-        let original = match std::fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
-            Err(error) => return Err(format!("failed to read {}: {error}", path.display())),
-        };
-        let mut contents = String::new();
-        for line in original.split_inclusive('\n') {
-            if line.trim() != "eval \"$(cargo-cleaner init zsh)\"" {
-                contents.push_str(line);
-            }
-        }
-        if !install {
-            contents = contents.replace(Self::ZSH_INIT, "");
-        } else if !contents.contains(Self::ZSH_INIT) {
-            if !contents.is_empty() && !contents.ends_with('\n') {
-                contents.push('\n');
-            }
-            contents.push_str(Self::ZSH_INIT);
-        }
-        if contents != original {
-            std::fs::write(&path, contents)
-                .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
-        }
-        if install {
-            Self::print(&format!(
-                "Cargo integration configured in {}. Open a new zsh session to activate it.\n",
-                path.display()
-            ))
-        } else {
-            Self::print(&format!(
-                "Cargo integration removed from {}. Open a new zsh session or run `unfunction cargo` in the current session.\n",
-                path.display()
-            ))
         }
     }
 
@@ -112,12 +68,12 @@ enum CliCommand {
     /// Install shell integration in the shell configuration file.
     Init {
         #[arg(value_enum)]
-        shell: Shell,
+        shell: ShellKind,
     },
     /// Remove shell integration from the shell configuration file.
     Uninstall {
         #[arg(value_enum)]
-        shell: Shell,
+        shell: ShellKind,
     },
     /// Run Cargo, checking cleanup thresholds before build commands.
     Exec {
@@ -127,6 +83,14 @@ enum CliCommand {
 }
 
 #[derive(Clone, ValueEnum)]
-enum Shell {
+enum ShellKind {
     Zsh,
+}
+
+impl ShellKind {
+    fn integration(&self) -> &dyn crate::shell::Shell {
+        match self {
+            Self::Zsh => &crate::shell::Zsh,
+        }
+    }
 }

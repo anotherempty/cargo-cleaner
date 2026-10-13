@@ -3,6 +3,7 @@
 
 mod app;
 mod cleanup;
+mod shell;
 
 fn main() -> std::process::ExitCode {
     match app::App::run() {
