@@ -23,7 +23,15 @@ function, and the previous `eval` initialization line is removed automatically.
 Open a new zsh session to activate it. Continue using
 normal commands such as `cargo build`, `cargo test`, and `cargo +stable check`.
 
-## Configure each project
+Setup also creates `~/.cargo-cleaner.toml` with `min_free_space_gib = 100` if
+missing. Existing files, including empty files, are preserved. `HOME` must be set;
+`ZDOTDIR` affects only shell integration, not the global cleanup config.
+
+## Global configuration and project overrides
+
+The global `~/.cargo-cleaner.toml` supplies the default policy for all projects,
+including projects outside your home directory. Edit it to change the default.
+Project configuration replaces the global policy entirely; thresholds are not merged.
 
 Create `.cargo-cleaner.toml` in your project or workspace root:
 
@@ -34,7 +42,7 @@ max_target_size_gib = 20
 Or choose a free-space threshold instead:
 
 ```toml
-min_free_space_gib = 10
+min_free_space_gib = 100
 ```
 
 Set at most one threshold, as a positive integer in GiB (1,073,741,824 bytes):
@@ -46,12 +54,15 @@ Set at most one threshold, as a positive integer in GiB (1,073,741,824 bytes):
 
 The selected condition triggers one `cargo clean` before the requested command.
 Setting both thresholds is an error and stops the command before Cargo runs.
-No configuration file, or an empty file,
-means no automatic cleanup. The example values are not built-in defaults.
+An empty project file disables automatic cleanup even when the global config has
+a threshold. If neither a project nor global config exists, cleanup is skipped;
+the 100 GiB default is written only during setup.
 
 The nearest `.cargo-cleaner.toml` is found by searching upward from the current
 directory, or from the manifest directory when `--manifest-path` is supplied.
 A nearer file replaces the parent configuration; settings are not merged.
+Search stops at the home directory when reached. If no project config is found,
+the global config is used. An overridden global config is not read or validated.
 Put the file at the workspace root to share thresholds across its members.
 Unknown keys, invalid values, measurement errors, and failed cleanup stop the
 requested command with a diagnostic.
@@ -95,7 +106,7 @@ cargo-cleaner uninstall zsh
 
 This removes the generated function and legacy initialization line from `.zshrc`,
 using the same `ZDOTDIR`/`HOME` selection as setup. Other configuration stays intact;
-repeated removal is safe. The binary and project cleanup configuration remain installed.
+repeated removal is safe. The binary and global and project cleanup configurations remain installed.
 Open a new shell, or use `unfunction cargo` to disable it in the current zsh session. To disable only
 cleanup for a project, leave its `.cargo-cleaner.toml` empty.
 

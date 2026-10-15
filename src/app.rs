@@ -19,7 +19,10 @@ impl App {
     pub fn run() -> Result<ExitCode, String> {
         let app = Self::parse();
         match app.command {
-            Some(CliCommand::Init { shell }) => Self::print(&shell.integration().setup()?),
+            Some(CliCommand::Init { shell }) => {
+                crate::cleanup::Config::setup()?;
+                Self::print(&shell.integration().setup()?)
+            }
             Some(CliCommand::Uninstall { shell }) => Self::print(&shell.integration().remove()?),
             Some(CliCommand::Exec { args }) => Self::forward(&args),
             None => {
@@ -65,7 +68,7 @@ impl App {
 
 #[derive(Subcommand)]
 enum CliCommand {
-    /// Install shell integration in the shell configuration file.
+    /// Install shell integration and create the global cleanup config if missing.
     Init {
         #[arg(value_enum)]
         shell: ShellKind,

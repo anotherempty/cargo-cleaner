@@ -26,6 +26,7 @@ mod tests {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(root.join("bin"))?;
+            fs::create_dir_all(root.join("home"))?;
             fs::create_dir_all(root.join("target"))?;
             fs::create_dir_all(root.join("member/src"))?;
             fs::write(root.join(".cargo-cleaner.toml"), config)?;
@@ -58,6 +59,7 @@ esac
                 .args(["exec", "--"])
                 .args(args)
                 .current_dir(self.root.join("member/src"))
+                .env("HOME", self.root.join("home"))
                 .env("PATH", std::env::join_paths(paths)?)
                 .env("CLEANER_LOG", self.root.join("calls"))
                 .env(
@@ -242,6 +244,43 @@ esac
             assert_eq!(fixture.run(&["build"]).unwrap().status.code(), Some(37));
             assert_eq!(fixture.calls(), "build\n");
         }
+    }
+
+    #[test]
+    fn global_config_applies_outside_home_and_project_config_replaces_it() {
+        for project in [None, Some(""), Some("max_target_size_gib = 1")] {
+            let fixture = Fixture::new(project.unwrap_or("")).unwrap();
+            fs::write(
+                fixture.root.join("home/.cargo-cleaner.toml"),
+                "min_free_space_gib = 1000000000",
+            )
+            .unwrap();
+            if project.is_none() {
+                fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+            }
+            assert_eq!(fixture.run(&["build"]).unwrap().status.code(), Some(37));
+            assert_eq!(
+                fixture.calls().contains("clean --target-dir"),
+                project.is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_global_config_blocks_build_unless_project_overrides_it() {
+        let fixture = Fixture::new("").unwrap();
+        fs::write(
+            fixture.root.join("home/.cargo-cleaner.toml"),
+            "invalid toml",
+        )
+        .unwrap();
+        assert_eq!(fixture.run(&["build"]).unwrap().status.code(), Some(37));
+        fs::remove_file(fixture.root.join("calls")).unwrap();
+        fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+        let output = fixture.run(&["build"]).unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("invalid"));
+        assert!(fixture.calls().is_empty());
     }
 
     #[test]

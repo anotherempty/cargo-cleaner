@@ -1,5 +1,6 @@
 use std::ffi::{OsStr, OsString};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -114,26 +115,65 @@ impl Cleanup {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Config {
+pub(crate) struct Config {
     max_target_size_gib: Option<u64>,
     min_free_space_gib: Option<u64>,
 }
 
 impl Config {
+    fn home_path() -> Option<PathBuf> {
+        std::env::var_os("HOME")
+            .filter(|value| !value.is_empty())
+            .map(|home| PathBuf::from(home).join(".cargo-cleaner.toml"))
+    }
+
+    pub(crate) fn setup() -> Result<(), String> {
+        let path = Self::home_path().ok_or("cannot locate global config: HOME is not set")?;
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(mut file) => file
+                .write_all(b"min_free_space_gib = 100\n")
+                .map_err(|error| format!("write {}: {error}", path.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Report unreadable paths instead of treating directories as config files.
+                fs::read_to_string(&path)
+                    .map(|_| ())
+                    .map_err(|error| format!("read {}: {error}", path.display()))
+            }
+            Err(error) => Err(format!("create {}: {error}", path.display())),
+        }
+    }
+
     fn find(start: &Path) -> Result<Option<(PathBuf, Self)>, String> {
+        let home = Self::home_path();
         for directory in start.ancestors() {
             let path = directory.join(".cargo-cleaner.toml");
-            match fs::read_to_string(&path) {
-                Ok(contents) => {
-                    let config = toml::from_str(&contents)
-                        .map_err(|error| format!("invalid {}: {error}", path.display()))?;
-                    return Ok(Some((path, config)));
-                }
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(error) => return Err(format!("read {}: {error}", path.display())),
+            if home.as_ref() == Some(&path) {
+                break;
+            }
+            if let Some(config) = Self::read(&path)? {
+                return Ok(Some((path, config)));
             }
         }
+        if let Some(path) = home
+            && let Some(config) = Self::read(&path)?
+        {
+            return Ok(Some((path, config)));
+        }
         Ok(None)
+    }
+
+    fn read(path: &Path) -> Result<Option<Self>, String> {
+        match fs::read_to_string(path) {
+            Ok(contents) => toml::from_str(&contents)
+                .map(Some)
+                .map_err(|error| format!("invalid {}: {error}", path.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(format!("read {}: {error}", path.display())),
+        }
     }
 
     fn limits(&self, path: &Path) -> Result<(Option<u64>, Option<u64>), String> {

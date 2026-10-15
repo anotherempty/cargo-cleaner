@@ -88,7 +88,7 @@ mod zsh {
             let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                 .args(["init", "zsh"])
                 .env("ZDOTDIR", &fixture.0)
-                .env_remove("HOME")
+                .env("HOME", &fixture.0)
                 .output()
                 .expect("run init");
             assert!(output.status.success(), "{:?}", output);
@@ -100,6 +100,48 @@ mod zsh {
     }
 
     #[test]
+    fn init_creates_global_default_in_home_and_preserves_existing_config() {
+        let fixture = Fixture::new().unwrap();
+        let zsh = fixture.0.join("zsh");
+        fs::create_dir(&zsh).unwrap();
+        let config = fixture.0.join(".cargo-cleaner.toml");
+        for existing in [None, Some("max_target_size_gib = 7\n"), Some("")] {
+            if let Some(contents) = existing {
+                fs::write(&config, contents).unwrap();
+            }
+            for _ in 0..2 {
+                let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                    .args(["init", "zsh"])
+                    .env("HOME", &fixture.0)
+                    .env("ZDOTDIR", &zsh)
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{output:?}");
+                assert_eq!(
+                    fs::read_to_string(&config).unwrap(),
+                    existing.unwrap_or("min_free_space_gib = 100\n")
+                );
+            }
+        }
+        assert!(!zsh.join(".cargo-cleaner.toml").exists());
+    }
+
+    #[test]
+    fn init_rejects_global_config_directory_before_installing_shell_function() {
+        let fixture = Fixture::new().unwrap();
+        fs::create_dir(fixture.0.join(".cargo-cleaner.toml")).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .args(["init", "zsh"])
+            .env("HOME", &fixture.0)
+            .env_remove("ZDOTDIR")
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("read"));
+        assert!(!fixture.0.join(".zshrc").exists());
+    }
+
+    #[test]
     fn init_reports_missing_home_and_unwritable_config() {
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
             .args(["init", "zsh"])
@@ -108,9 +150,7 @@ mod zsh {
             .output()
             .expect("run init");
         assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("neither ZDOTDIR nor HOME is set")
-        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("HOME is not set"));
         let fixture = Fixture::new().expect("create fixture");
         fs::create_dir(fixture.0.join(".zshrc")).expect("create directory");
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
@@ -132,7 +172,7 @@ mod zsh {
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
             .args(["init", "zsh"])
             .env("ZDOTDIR", &fixture.0)
-            .env_remove("HOME")
+            .env("HOME", &fixture.0)
             .output()
             .expect("run init");
         assert!(output.status.success());
@@ -143,7 +183,7 @@ mod zsh {
             let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                 .args(["uninstall", "zsh"])
                 .env("ZDOTDIR", &fixture.0)
-                .env_remove("HOME")
+                .env("HOME", &fixture.0)
                 .output()
                 .expect("run uninstall");
             assert!(output.status.success(), "{output:?}");
@@ -170,6 +210,7 @@ mod zsh {
     #[test]
     fn shell_forwards_arguments_streams_environment_directory_and_status() {
         let fixture = Fixture::new().expect("create fixture");
+        fs::write(fixture.0.join(".cargo-cleaner.toml"), "").expect("disable cleanup");
         let cargo = fixture.0.join("cargo");
         fs::write(
             &cargo,
