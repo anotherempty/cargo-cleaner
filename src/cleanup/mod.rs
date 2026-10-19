@@ -11,7 +11,7 @@ use std::process::Command;
 use serde::Deserialize;
 
 use crate::error::{CargoOperation, Error, FileOperation};
-use free_space::FreeSpacePolicy;
+use free_space::{FreeSpaceConfig, FreeSpacePolicy};
 use registry::Project;
 
 pub struct Cleanup;
@@ -86,8 +86,12 @@ impl Config {
             .create_new(true)
             .open(&path)
         {
-            Ok(mut file) => writeln!(file, "min_free_space_gib = {}", Self::DEFAULT_MIN_FREE_GIB)
-                .map_err(|error| Error::file(FileOperation::Write, &path, error)),
+            Ok(mut file) => writeln!(
+                file,
+                "[free_space]\nmin_free_space_gib = {}\nacross_projects = true",
+                Self::DEFAULT_MIN_FREE_GIB
+            )
+            .map_err(|error| Error::file(FileOperation::Write, &path, error)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Report unreadable paths instead of treating directories as config files.
                 fs::read_to_string(&path)
@@ -152,7 +156,7 @@ impl Config {
 #[serde(deny_unknown_fields)]
 struct GlobalConfig {
     max_target_size_gib: Option<u64>,
-    min_free_space_gib: Option<u64>,
+    free_space: Option<FreeSpaceConfig>,
 }
 
 impl GlobalConfig {
@@ -163,10 +167,8 @@ impl GlobalConfig {
                 .map(|value| ByteLimit::from_gib(value, Threshold::MaxTarget))
                 .transpose()?,
             min_free: self
-                .min_free_space_gib
-                .map(|value| {
-                    ByteLimit::from_gib(value, Threshold::MinFree).map(FreeSpacePolicy::new)
-                })
+                .free_space
+                .map(FreeSpaceConfig::into_policy)
                 .transpose()?,
         })
     }
@@ -392,8 +394,10 @@ mod tests {
 
     #[test]
     fn global_settings_allow_both_thresholds() {
-        let config: GlobalConfig =
-            toml::from_str("max_target_size_gib = 1\nmin_free_space_gib = 1").unwrap();
+        let config: GlobalConfig = toml::from_str(
+            "max_target_size_gib = 1\n[free_space]\nmin_free_space_gib = 1\nacross_projects = true",
+        )
+        .unwrap();
         let settings = config.into_settings().unwrap();
         assert!(settings.max_target.is_some());
         assert!(settings.min_free.is_some());
@@ -401,7 +405,9 @@ mod tests {
 
     #[test]
     fn project_settings_reject_free_space_threshold() {
-        let result = toml::from_str::<ProjectConfig>("min_free_space_gib = 1");
+        let result = toml::from_str::<ProjectConfig>(
+            "[free_space]\nmin_free_space_gib = 1\nacross_projects = true",
+        );
         assert!(result.is_err());
     }
 }

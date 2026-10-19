@@ -56,7 +56,7 @@ mod zsh {
     const EXECUTABLE_MODE: u32 = 0o755;
     const FORWARDED_EXIT_CODE: i32 = 37;
     const REPEAT_COUNT: usize = 2;
-    const DEFAULT_CONFIG: &str = "min_free_space_gib = 100\n";
+    const DEFAULT_CONFIG: &str = "[free_space]\nmin_free_space_gib = 100\nacross_projects = true\n";
     const EXISTING_CONFIG: &str = "max_target_size_gib = 7\n";
 
     struct Fixture(PathBuf);

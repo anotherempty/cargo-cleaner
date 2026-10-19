@@ -1,19 +1,24 @@
 use std::path::Path;
 
 use super::registry::Registry;
-use super::{ByteLimit, Cleanup, Invocation, Workspace};
+use super::{ByteLimit, Cleanup, Invocation, PolicyError, Threshold, Workspace};
 use crate::error::{CargoOperation, Error, FileOperation};
+use serde::Deserialize;
 
 pub(super) struct FreeSpacePolicy {
     limit: ByteLimit,
-    registry: Registry,
+    selection: Selection,
 }
 
 impl FreeSpacePolicy {
-    pub(super) fn new(limit: ByteLimit) -> Self {
+    fn new(limit: ByteLimit, across_projects: bool) -> Self {
         Self {
             limit,
-            registry: Registry::default(),
+            selection: if across_projects {
+                Selection::AcrossProjects(Registry::default())
+            } else {
+                Selection::Current
+            },
         }
     }
 
@@ -23,20 +28,49 @@ impl FreeSpacePolicy {
         workspace: &Workspace,
         target: &Path,
     ) -> Result<(), Error> {
-        self.registry = Registry::register(&workspace.workspace_root, target)?;
+        if let Selection::AcrossProjects(registry) = &mut self.selection {
+            *registry = Registry::register(&workspace.workspace_root, target)?;
+        }
         let available = fs2::available_space(&workspace.workspace_root).map_err(|source| {
             Error::file(FileOperation::FreeSpace, &workspace.workspace_root, source)
         })?;
-        if available < self.limit.get()
-            && let Some(project) = self.registry.heaviest()?
-        {
-            let command = if project.is_current(&workspace.workspace_root, target)? {
-                invocation.command(CargoOperation::Clean)
-            } else {
-                project.clean_command()
-            };
-            Cleanup::clean(command, project.target())?;
+        if available >= self.limit.get() {
+            return Ok(());
+        }
+        match &self.selection {
+            Selection::Current => {
+                Cleanup::clean(invocation.command(CargoOperation::Clean), target)?
+            }
+            Selection::AcrossProjects(registry) => {
+                if let Some(project) = registry.heaviest()? {
+                    let command = if project.is_current(&workspace.workspace_root, target)? {
+                        invocation.command(CargoOperation::Clean)
+                    } else {
+                        project.clean_command()
+                    };
+                    Cleanup::clean(command, project.target())?;
+                }
+            }
         }
         Ok(())
+    }
+}
+
+enum Selection {
+    Current,
+    AcrossProjects(Registry),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct FreeSpaceConfig {
+    min_free_space_gib: u64,
+    across_projects: bool,
+}
+
+impl FreeSpaceConfig {
+    pub(super) fn into_policy(self) -> Result<FreeSpacePolicy, PolicyError> {
+        let limit = ByteLimit::from_gib(self.min_free_space_gib, Threshold::MinFree)?;
+        Ok(FreeSpacePolicy::new(limit, self.across_projects))
     }
 }

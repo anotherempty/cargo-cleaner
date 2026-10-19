@@ -14,7 +14,8 @@ mod tests {
     const METADATA_AND_FORWARD_CALLS: usize = 2;
     const METADATA_AND_FAILED_CLEAN_CALLS: usize = 2;
     const FORWARD_ONLY_CALLS: usize = 1;
-    const CONFLICTING_THRESHOLDS_CONFIG: &str = "max_target_size_gib = 20\nmin_free_space_gib = 10";
+    const CONFLICTING_THRESHOLDS_CONFIG: &str =
+        "max_target_size_gib = 20\n[free_space]\nmin_free_space_gib = 10\nacross_projects = true";
     const ZERO_LIMIT_CONFIG: &str = "max_target_size_gib = 0";
     const NEGATIVE_LIMIT_CONFIG: &str = "min_free_space_gib = -1";
     const OVERFLOW_LIMIT_CONFIG: &str = "max_target_size_gib = 999999999999";
@@ -28,8 +29,10 @@ mod tests {
     const SUCCESS_EXIT_CODE: i32 = 0;
     const TARGET_LIMIT_CONFIG: &str = "max_target_size_gib = 1";
     // An intentionally unattainable free-space requirement forces cleanup.
-    const REGISTRATION_CONFIG: &str = "min_free_space_gib = 1";
-    const LOW_DISK_CONFIG: &str = "min_free_space_gib = 1000000000";
+    const REGISTRATION_CONFIG: &str =
+        "[free_space]\nmin_free_space_gib = 1\nacross_projects = true";
+    const LOW_DISK_CONFIG: &str =
+        "[free_space]\nmin_free_space_gib = 1000000000\nacross_projects = true";
 
     #[derive(Debug, thiserror::Error)]
     enum FixtureError {
@@ -265,9 +268,7 @@ esac
         let fixture = Fixture::new(CONFLICTING_THRESHOLDS_CONFIG).unwrap();
         let output = fixture.run(&["build"]).unwrap();
         assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("unknown field `min_free_space_gib`")
-        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field `free_space`"));
         assert!(fixture.calls().unwrap().is_empty());
     }
 
@@ -776,9 +777,7 @@ esac
         fixture.global(LOW_DISK_CONFIG).unwrap();
         let output = fixture.run(&["build"]).unwrap();
         assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains("unknown field `min_free_space_gib`")
-        );
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unknown field `free_space`"));
         assert!(fixture.calls().unwrap().is_empty());
     }
 
@@ -867,5 +866,52 @@ esac
             ]
         );
         assert_eq!(calls.lines().last(), Some("build"));
+    }
+    #[test]
+    fn current_project_free_space_cleans_current_without_reading_registry() {
+        const LOCAL_FREE_SPACE: &str =
+            "[free_space]\nmin_free_space_gib = 1000000000\nacross_projects = false";
+        let fixture = Fixture::with_global(LOCAL_FREE_SPACE).unwrap();
+        let directory = fixture.root.join("home/.cargo-cleaner");
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("projects.toml");
+        fs::write(&path, "invalid registry").unwrap();
+        let output = fixture.run(&["build"]).unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert_eq!(
+            fixture
+                .calls()
+                .unwrap()
+                .lines()
+                .nth(CLEAN_CALL_INDEX)
+                .unwrap(),
+            format!(
+                "clean --target-dir {}",
+                fixture.root.join("target").display()
+            )
+        );
+        assert_eq!(fs::read_to_string(path).unwrap(), "invalid registry");
+    }
+
+    #[test]
+    fn invalid_free_space_objects_are_rejected_before_cargo_runs() {
+        for config in [
+            "free_space = 100",
+            "min_free_space_gib = 100",
+            "[free_space]\nmin_free_space_gib = 1",
+            "[free_space]\nacross_projects = true",
+            "[free_space]\nmin_free_space_gib = 0\nacross_projects = true",
+            "[free_space]\nmin_free_space_gib = -1\nacross_projects = true",
+            "[free_space]\nmin_free_space_gib = 999999999999\nacross_projects = true",
+            "[free_space]\nmin_free_space_gib = 1\nacross_projects = \"true\"",
+            "[free_space]\nmin_free_space_gib = 1\nacross_projects = true\nunknown = true",
+        ] {
+            let fixture = Fixture::with_global(config).unwrap();
+            assert_eq!(
+                fixture.run(&["build"]).unwrap().status.code(),
+                Some(WRAPPER_FAILURE_EXIT_CODE)
+            );
+            assert!(fixture.calls().unwrap().is_empty());
+        }
     }
 }

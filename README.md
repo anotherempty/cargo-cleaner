@@ -23,7 +23,7 @@ function.
 Open a new zsh session to activate it. Continue using
 normal commands such as `cargo build`, `cargo test`, and `cargo +stable check`.
 
-Setup also creates `~/.cargo-cleaner.toml` with `min_free_space_gib = 100` if
+Setup also creates `~/.cargo-cleaner.toml` with a `free_space` object (`min_free_space_gib = 100`, `across_projects = true`) if
 missing. Existing files, including empty files, are preserved. `HOME` must be set;
 `ZDOTDIR` affects only shell integration, not the global cleanup config.
 
@@ -32,13 +32,19 @@ missing. Existing files, including empty files, are preserved. `HOME` must be se
 Set the global free-space policy in `~/.cargo-cleaner.toml`:
 
 ```toml
+[free_space]
 min_free_space_gib = 100
+across_projects = true
 ```
 
-`min_free_space_gib` is global-only. Project files cannot override or disable it;
-putting this key in a project file is an error. The global configuration is always
+Both fields are required. Set `across_projects = true` to register projects and clean the
+largest known target. Set `across_projects = false` to clean only the current project without
+reading or updating the registry.
+
+The `free_space` object is global-only. Project files cannot override or disable it;
+putting this object in a project file is an error. The global configuration is always
 read and validated, even when a project has its own configuration. Omitting this
-key from the global file disables the free-space policy and registry operations.
+object from the global file disables the free-space policy and registry operations.
 The 100 GiB default is written only during setup.
 
 Set a local target-size limit in your project's `.cargo-cleaner.toml`:
@@ -49,18 +55,19 @@ max_target_size_gib = 20
 
 The global file can also provide `max_target_size_gib` as a default. The nearest
 project file replaces only that size policy. An empty project file disables the
-local size policy while leaving the global free-space policy active. Both
-thresholds can be present in the global file and operate independently.
+local size policy while leaving the global free-space policy active. The size limit and free-space object
+can both be present in the global file and operate independently.
 
 Thresholds are positive integers in GiB (1,073,741,824 bytes):
 
-- `min_free_space_gib`: clean the largest registered target when available space
-  on the current workspace's filesystem is **less than** this minimum.
+- `free_space.min_free_space_gib`: clean when available space on the current
+  workspace's filesystem is **less than** this minimum. `across_projects` controls which
+  project is selected.
 - `max_target_size_gib`: clean the current target when its total file size is
   **greater than** this limit.
 
 The global free-space policy runs first, including registration of the current
-project, followed by the size policy. If different projects exceed the two
+project when `across_projects = true`, followed by the size policy. If different projects exceed the two
 conditions, each policy can clean its selected target. If the free-space cleanup
 removes the current target, the size check sees it as empty.
 
@@ -93,7 +100,7 @@ Cargo processes. Cargo's own locking still applies.
 
 ## Project registry
 
-When the global free-space policy is configured, it identifies the current
+When the global free-space policy has `across_projects = true`, it identifies the current
 workspace and target directory before each supported build command. If the target
 directory exists, the policy registers the project in `~/.cargo-cleaner/projects.toml` before cleanup is evaluated.
 `HOME` must be set. Projects are discovered through wrapper invocations; there is
@@ -101,7 +108,7 @@ no filesystem-wide scan. A first build without a target directory is registered
 on a later invocation after the target exists.
 
 Registration runs even when free space is sufficient or an empty project config
-disables the local size policy. Without a global free-space threshold, the registry
+disables the local size policy. When `free_space` is absent or `across_projects = false`, the registry
 is neither read nor updated. Canonical target paths are deduplicated,
 including targets shared by multiple workspaces. Missing target directories and
 workspaces without a `Cargo.toml` are removed from the registry. Updates use a file
