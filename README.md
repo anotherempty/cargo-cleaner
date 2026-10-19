@@ -29,6 +29,13 @@ missing. Existing files, including empty files, are preserved. `HOME` must be se
 
 ## Global configuration and project overrides
 
+Set top-level `verbose = true` to show cleanup progress, target measurements,
+selection decisions, and timings on stderr. It defaults to `false`. The nearest
+project configuration can override the global value with `verbose = true` or
+`verbose = false`; omitting it inherits the global value. Place this setting
+before any `[free_space]` table. Cleanup announcements and errors remain visible
+regardless of verbosity.
+
 Set the global free-space policy in `~/.cargo-cleaner.toml`:
 
 ```toml

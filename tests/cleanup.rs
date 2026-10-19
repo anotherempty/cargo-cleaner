@@ -143,6 +143,60 @@ esac
     }
 
     #[test]
+    fn verbose_setting_inherits_and_allows_project_overrides() {
+        for (global, project, verbose) in [
+            ("", "", false),
+            ("verbose = true\n", "", true),
+            ("verbose = true\n", "verbose = false", false),
+            ("verbose = false\n", "verbose = true", true),
+        ] {
+            let fixture = Fixture::new(project).unwrap();
+            fixture
+                .global(&format!("{global}{LOW_DISK_CONFIG}"))
+                .unwrap();
+            let output = fixture.run(&["build"]).unwrap();
+            assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+            assert_eq!(output.stdout, b"forwarded");
+            let diagnostics = String::from_utf8_lossy(&output.stderr);
+            assert!(diagnostics.contains("running cargo clean"));
+            assert!(
+                diagnostics
+                    .lines()
+                    .all(|line| line.trim_start().starts_with("INFO "))
+            );
+            for message in [
+                "resolving Cargo workspace",
+                "updating project registry",
+                "checked free disk space",
+                "scanning registered targets",
+                "measuring registered target",
+                "selected largest target",
+                "cargo clean completed",
+                "cleanup checks complete",
+            ] {
+                assert_eq!(
+                    diagnostics.contains(message),
+                    verbose,
+                    "{message}: {diagnostics}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn verbose_requires_a_boolean() {
+        for global in [false, true] {
+            let fixture = Fixture::new(if global { "" } else { "verbose = 1" }).unwrap();
+            if global {
+                fixture.global("verbose = 1").unwrap();
+            }
+            let output = fixture.run(&["build"]).unwrap();
+            assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
+            assert!(fixture.calls().unwrap().is_empty());
+        }
+    }
+
+    #[test]
     fn oversize_target_cleans_before_forwarding_with_toolchain_and_config() {
         let fixture = Fixture::new(TARGET_LIMIT_CONFIG).unwrap();
         fixture

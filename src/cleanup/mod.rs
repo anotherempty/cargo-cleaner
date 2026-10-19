@@ -29,7 +29,10 @@ impl Cleanup {
             return Ok(());
         }
 
-        tracing::info!("cargo-cleaner: resolving Cargo workspace for cleanup checks");
+        let _guard = tracing::subscriber::set_default(crate::diagnostics::Diagnostics::subscriber(
+            settings.verbose,
+        ));
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: resolving Cargo workspace for cleanup checks");
         let workspace = invocation.workspace()?;
         let target_override = invocation.target.as_ref().map(|path| cwd.join(path));
         let target = target_override
@@ -43,7 +46,7 @@ impl Cleanup {
         {
             Self::clean(invocation.command(CargoOperation::Clean), target)?;
         }
-        tracing::info!("cargo-cleaner: cleanup checks complete; forwarding Cargo command");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: cleanup checks complete; forwarding Cargo command");
         Ok(())
     }
 
@@ -61,14 +64,14 @@ impl Cleanup {
         if !status.success() {
             return Err(Error::CleanFailed(status));
         }
-        tracing::info!(target = %target.display(), elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-cleaner: cargo clean completed");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %target.display(), elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-cleaner: cargo clean completed");
         Ok(())
     }
 
     fn directory_exceeds(root: &Path, limit: ByteLimit) -> Result<bool, Error> {
-        tracing::info!(target = %root.display(), limit_bytes = limit.get(), "cargo-cleaner: checking target size limit");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), limit_bytes = limit.get(), "cargo-cleaner: checking target size limit");
         let exceeds = Project::target_size(root, Some(limit.get()))? > limit.get();
-        tracing::info!(target = %root.display(), exceeds_limit = exceeds, "cargo-cleaner: target size check complete");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), exceeds_limit = exceeds, "cargo-cleaner: target size check complete");
         Ok(exceeds)
     }
 }
@@ -129,6 +132,9 @@ impl Config {
                 break;
             }
             if let Some(config) = Self::read::<ProjectConfig>(&path)? {
+                if let Some(verbose) = config.verbose {
+                    global.verbose = verbose;
+                }
                 project = Some(
                     config
                         .into_max_target()
@@ -162,6 +168,7 @@ impl Config {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GlobalConfig {
+    verbose: Option<bool>,
     max_target_size_gib: Option<u64>,
     free_space: Option<FreeSpaceConfig>,
 }
@@ -169,6 +176,7 @@ struct GlobalConfig {
 impl GlobalConfig {
     fn into_settings(self) -> Result<Settings, PolicyError> {
         Ok(Settings {
+            verbose: self.verbose.unwrap_or(false),
             max_target: self
                 .max_target_size_gib
                 .map(|value| ByteLimit::from_gib(value, Threshold::MaxTarget))
@@ -184,6 +192,7 @@ impl GlobalConfig {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProjectConfig {
+    verbose: Option<bool>,
     max_target_size_gib: Option<u64>,
 }
 
@@ -197,6 +206,7 @@ impl ProjectConfig {
 
 #[derive(Default)]
 struct Settings {
+    verbose: bool,
     max_target: Option<ByteLimit>,
     min_free: Option<FreeSpacePolicy>,
 }

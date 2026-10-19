@@ -3,16 +3,12 @@
 
 mod app;
 mod cleanup;
+mod diagnostics;
 mod error;
 mod shell;
 
 fn main() -> std::process::ExitCode {
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .without_time()
-        .with_ansi(false)
-        .with_target(false)
-        .finish();
+    let subscriber = diagnostics::Diagnostics::subscriber(false);
     let _guard = tracing::subscriber::set_default(subscriber);
     match app::App::run() {
         Ok(code) => code,
