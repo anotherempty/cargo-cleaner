@@ -27,6 +27,9 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Fish: `cargo-cleaner init fish` writes
+`$XDG_CONFIG_HOME/fish/conf.d/cargo-cleaner.fish` (default `~/.config/fish/conf.d/`).
+
 Elvish 0.21+: `cargo-cleaner init elvish` updates
 `$XDG_CONFIG_HOME/elvish/rc.elv` (default `~/.config/elvish/rc.elv`,
 or `%APPDATA%/elvish/rc.elv` on Windows).
