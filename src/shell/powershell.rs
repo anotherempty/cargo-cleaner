@@ -27,7 +27,7 @@ impl Shell for PowerShell {
 
 impl PowerShell {
     const POWERSHELL_INIT: &str = "Set-Alias -Name cargo -Value (Join-Path $PSScriptRoot 'cargo-cleaner.ps1') -Scope Global\n";
-    const POWERSHELL_WRAPPER: &str = "& (Get-Command cargo-cleaner -CommandType Application -ErrorAction Stop) exec -- @args\nexit $LASTEXITCODE\n";
+    const POWERSHELL_WRAPPER: &str = "if ($MyInvocation.ExpectingInput) {\n    $input | & (Get-Command cargo-cleaner -CommandType Application -ErrorAction Stop) exec -- @args\n} else {\n    & (Get-Command cargo-cleaner -CommandType Application -ErrorAction Stop) exec -- @args\n}\nexit $LASTEXITCODE\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let output = Command::new("pwsh")

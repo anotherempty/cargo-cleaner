@@ -264,6 +264,49 @@ mod tests {
     }
 
     #[test]
+    fn powershell_forwards_pipeline_and_direct_stdin_once() {
+        let fixture = Fixture::new().unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "powershell"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let input = "first line\nsecond line\n";
+        let input_path = fixture.directory.path().join("input.txt");
+        fs::write(&input_path, input).unwrap();
+        for exit_code in [0, FORWARDED_EXIT_CODE] {
+            fs::write(
+                fixture.directory.path().join("cargo"),
+                format!("#!/bin/sh\nprintf 'invoked' >&2\ncat\nexit {exit_code}\n"),
+            )
+            .unwrap();
+            for script in [
+                ". $PROFILE.CurrentUserAllHosts; 'first line', 'second line' | cargo custom; exit $LASTEXITCODE",
+                ". $PROFILE.CurrentUserAllHosts; cargo custom; exit $LASTEXITCODE",
+            ] {
+                let output = fixture
+                    .command("pwsh")
+                    .unwrap()
+                    .args([
+                        "-NoLogo",
+                        "-NoProfile",
+                        "-NonInteractive",
+                        "-Command",
+                        script,
+                    ])
+                    .stdin(fs::File::open(&input_path).unwrap())
+                    .output()
+                    .unwrap();
+                assert_eq!(output.status.code(), Some(exit_code), "{output:?}");
+                assert_eq!(output.stdout, input.as_bytes(), "{script}");
+                assert_eq!(output.stderr, b"invoked");
+            }
+        }
+    }
+
+    #[test]
     fn nu_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture
