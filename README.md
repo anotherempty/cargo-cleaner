@@ -4,7 +4,21 @@ A Cargo command wrapper with automatic cleanup across known projects. Before bui
 commands, it runs `cargo clean` when configured size or free-space thresholds are
 crossed, then forwards the original command.
 
-## Install locally
+## Install
+
+Once a release is published, download a prebuilt archive from
+[GitHub Releases](https://github.com/anotherempty/cargo-cleaner/releases), or install
+the latest release with:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-cleaner/releases/latest/download/cargo-cleaner-installer.sh | sh
+```
+
+Distributions cover Linux and macOS on x86_64 and ARM64. The installer places the
+binary in `$CARGO_HOME/bin`, or `~/.cargo/bin` when `CARGO_HOME` is unset.
+Cargo and zsh are still required to use the wrapper and its shell integration.
+
+To build and install from a local checkout:
 
 ```sh
 cargo install --path .
@@ -167,3 +181,36 @@ cargo clippy --all-targets --all-features -- -D warnings
 Shell integration tests require zsh. Cleanup tests use isolated temporary projects;
 one test invokes real Cargo to verify workspace target discovery, cleanup, and
 rebuilding together.
+
+## Distributions and releases
+
+Release packaging uses [cargo-dist](https://axodotdev.github.io/cargo-dist/), pinned
+to version `0.33.0` in `dist-workspace.toml`. Install that version locally:
+
+```sh
+cargo install cargo-dist --version 0.33.0 --locked
+```
+
+After changing distribution settings, regenerate the workflow and check the plan:
+
+```sh
+dist generate
+dist generate --check
+dist plan
+```
+
+Build archives for your current platform with `dist build --artifacts=local`.
+Artifacts are written to `target/distrib/`.
+
+To publish a release:
+
+1. Update the package version in `Cargo.toml` and refresh `Cargo.lock` with Cargo.
+2. Run the development checks above and `dist plan`.
+3. Commit and push the release changes, including the generated workflow.
+4. Create and push the matching version tag, for example `git tag v0.1.0` followed
+   by `git push origin v0.1.0` for the current version.
+
+The generated GitHub Actions workflow checks release plans on pull requests.
+Version tags build the platform archives, shell installer, and SHA-256 checksums,
+then publish them to GitHub Releases. Tags with a prerelease suffix produce a
+GitHub prerelease. This workflow does not publish to crates.io.
