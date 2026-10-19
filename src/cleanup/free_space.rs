@@ -34,9 +34,17 @@ impl FreeSpacePolicy {
         let available = fs2::available_space(&workspace.workspace_root).map_err(|source| {
             Error::file(FileOperation::FreeSpace, &workspace.workspace_root, source)
         })?;
+        tracing::info!(
+            workspace = %workspace.workspace_root.display(),
+            available_bytes = available,
+            minimum_bytes = self.limit.get(),
+            "cargo-cleaner: checked free disk space"
+        );
         if available >= self.limit.get() {
+            tracing::info!("cargo-cleaner: free space is sufficient; skipping free-space cleanup");
             return Ok(());
         }
+        tracing::info!("cargo-cleaner: free space is below minimum; selecting a target to clean");
         match &self.selection {
             Selection::Current => {
                 Cleanup::clean(invocation.command(CargoOperation::Clean), target)?

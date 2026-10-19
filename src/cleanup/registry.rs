@@ -15,6 +15,7 @@ pub(super) struct Registry {
 
 impl Registry {
     pub(super) fn register(workspace: &Path, target: &Path) -> Result<Self, Error> {
+        tracing::info!(workspace = %workspace.display(), "cargo-cleaner: updating project registry");
         let home = std::env::var_os("HOME")
             .filter(|home| !home.is_empty())
             .ok_or(Error::MissingRegistryHome)?;
@@ -31,6 +32,7 @@ impl Registry {
             .truncate(false)
             .open(&lock_path)
             .map_err(|source| Error::file(FileOperation::Create, &lock_path, source))?;
+        tracing::info!("cargo-cleaner: acquiring project registry lock");
         fs2::FileExt::lock_exclusive(&lock)
             .map_err(|source| Error::file(FileOperation::Lock, &lock_path, source))?;
         let registry: Self = match fs::read_to_string(&path) {
@@ -75,19 +77,37 @@ impl Registry {
             .map_err(|error| Error::file(FileOperation::Write, &path, error.error))?;
         // Dropping the file releases the lock, including on any error above.
         drop(lock);
+        tracing::info!(
+            projects = registry.projects.len(),
+            "cargo-cleaner: project registry updated"
+        );
         Ok(registry)
     }
 
     pub(super) fn heaviest(&self) -> Result<Option<&Project>, Error> {
+        let started = std::time::Instant::now();
+        tracing::info!(
+            projects = self.projects.len(),
+            "cargo-cleaner: scanning registered targets for the largest"
+        );
         let mut largest = None;
         for project in &self.projects {
             if Project::resolve(&project.workspace, &project.target)?.is_none() {
                 continue;
             }
+            tracing::info!(target = %project.target.display(), "cargo-cleaner: measuring registered target");
             let size = Project::target_size(&project.target, None)?;
+            tracing::info!(target = %project.target.display(), size_bytes = size, "cargo-cleaner: measured registered target");
             if largest.is_none_or(|(_, largest_size)| size > largest_size) {
                 largest = Some((project, size));
             }
+        }
+        if let Some((project, size)) = largest {
+            tracing::info!(target = %project.target.display(), size_bytes = size, elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-cleaner: selected largest target");
+        } else {
+            tracing::info!(
+                "cargo-cleaner: no eligible registered targets; skipping free-space cleanup"
+            );
         }
         Ok(largest.map(|(project, _)| project))
     }
