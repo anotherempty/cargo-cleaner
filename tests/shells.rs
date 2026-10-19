@@ -52,6 +52,7 @@ mod tests {
                 .current_dir(self.directory.path())
                 .env("HOME", self.directory.path())
                 .env_remove("ZDOTDIR")
+                .env("XDG_CONFIG_HOME", self.directory.path().join(".config"))
                 .env("CLINK_PROFILE", self.directory.path().join("clink"))
                 .env("PATH", std::env::join_paths(paths)?);
             Ok(command)
@@ -88,6 +89,38 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    #[test]
+    fn elvish_setup_removal_and_forwarding() {
+        let fixture = Fixture::new().unwrap();
+        fixture
+            .lifecycle("elvish", ".config/elvish/rc.elv")
+            .unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "elvish"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = fixture
+            .command("elvish")
+            .unwrap()
+            .args([
+                "-c",
+                "eval (slurp < $E:HOME/.config/elvish/rc.elv); cargo $@args",
+                "+stable",
+                "custom",
+                "",
+                "with spaces",
+                "*;$HOME",
+            ])
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("diagnostic"));
     }
 
     #[test]

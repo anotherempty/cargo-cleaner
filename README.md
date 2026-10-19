@@ -27,6 +27,10 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Elvish 0.21+: `cargo-cleaner init elvish` updates
+`$XDG_CONFIG_HOME/elvish/rc.elv` (default `~/.config/elvish/rc.elv`,
+or `%APPDATA%/elvish/rc.elv` on Windows).
+
 Cmd: use `cargo-cleaner init cmd` with Clink 1.6.11+. Setup writes
 `cargo-cleaner.lua` under `CLINK_PROFILE` or `%LOCALAPPDATA%/clink`.
 On Windows, set `HOME` to your user directory for cleanup configuration.
