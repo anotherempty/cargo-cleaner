@@ -182,6 +182,45 @@ mod tests {
     }
 
     #[test]
+    fn powershell_preserves_failure_status_and_cargo_flags() {
+        let fixture = Fixture::new().unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "powershell"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let output = fixture.command("pwsh").unwrap()
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                ". $PROFILE.CurrentUserAllHosts; cargo custom -p example --release -v; if ($?) { throw 'Failure reported as success' }; cargo custom && $(throw 'Failure continued through &&'); exit $LASTEXITCODE"])
+            .output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(
+            output.stdout,
+            b"custom\0-p\0example\0--release\0-v\0custom\0"
+        );
+        assert_eq!(output.stderr, b"diagnosticdiagnostic");
+
+        fs::write(
+            fixture.directory.path().join("cargo"),
+            "#!/bin/sh\nexit 0\n",
+        )
+        .unwrap();
+        let output = fixture.command("pwsh").unwrap()
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                ". $PROFILE.CurrentUserAllHosts; cargo custom; if (!$?) { throw 'Success reported as failure' }; cargo custom && Write-Output 'continued'; exit $LASTEXITCODE"])
+            .output().unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(output.stdout, b"continued\n");
+        assert!(output.stderr.is_empty(), "{output:?}");
+    }
+
+    #[test]
     fn nu_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture

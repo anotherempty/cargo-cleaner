@@ -26,7 +26,8 @@ impl Shell for PowerShell {
 }
 
 impl PowerShell {
-    const POWERSHELL_INIT: &str = "function global:cargo {\n    & (Get-Command cargo-cleaner -CommandType Application -ErrorAction Stop) exec -- @args\n    $global:LASTEXITCODE = $LASTEXITCODE\n}\n";
+    const POWERSHELL_INIT: &str = "Set-Alias -Name cargo -Value (Join-Path $PSScriptRoot 'cargo-cleaner.ps1') -Scope Global\n";
+    const POWERSHELL_WRAPPER: &str = "& (Get-Command cargo-cleaner -CommandType Application -ErrorAction Stop) exec -- @args\nexit $LASTEXITCODE\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let output = Command::new("pwsh")
@@ -50,6 +51,8 @@ impl PowerShell {
             return Err(Error::EmptyPowerShellProfile);
         }
         let path = PathBuf::from(profile);
+        let wrapper = path.with_file_name("cargo-cleaner.ps1");
+        ShellConfig::update(&wrapper, Self::POWERSHELL_WRAPPER, action)?;
         ShellConfig::update(&path, Self::POWERSHELL_INIT, action)?;
         Ok(path)
     }

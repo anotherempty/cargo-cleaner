@@ -36,7 +36,7 @@ Replace `zsh` with your shell below, then open a new session:
 | Fish | `fish` | `<config>/fish/conf.d/cargo-cleaner.fish` |
 | Ion | `ion` | `<config>/ion/initrc` |
 | Nushell | `nu` | `<config>/nushell/config.nu` |
-| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts`, located using `pwsh` |
+| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts` and adjacent `cargo-cleaner.ps1`, located using `pwsh` |
 | Tcsh | `tcsh` | `~/.tcshrc` |
 | Xonsh | `xonsh` | `~/.xonshrc` |
 | Zsh | `zsh` | `$ZDOTDIR/.zshrc`, otherwise `~/.zshrc` |
