@@ -26,41 +26,32 @@ Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 cargo-cleaner init zsh
 ```
 
-Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
-Xonsh: `cargo-cleaner init xonsh` adds an alias to `~/.xonshrc`.
+Replace `zsh` with your shell below, then open a new session:
 
-Tcsh: `cargo-cleaner init tcsh` adds an alias to `~/.tcshrc`.
+| Shell | Argument | Integration file |
+| --- | --- | --- |
+| Bash | `bash` | `~/.bashrc` |
+| Cmd + Clink 1.6.11+ | `cmd` | `%CLINK_PROFILE%/cargo-cleaner.lua`, otherwise `%LOCALAPPDATA%/clink/cargo-cleaner.lua` |
+| Elvish 0.21+ | `elvish` | `<config>/elvish/rc.elv` |
+| Fish | `fish` | `<config>/fish/conf.d/cargo-cleaner.fish` |
+| Ion | `ion` | `<config>/ion/initrc` |
+| Nushell | `nu` | `<config>/nushell/config.nu` |
+| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts`, located using `pwsh` |
+| Tcsh | `tcsh` | `~/.tcshrc` |
+| Xonsh | `xonsh` | `~/.xonshrc` |
+| Zsh | `zsh` | `$ZDOTDIR/.zshrc`, otherwise `~/.zshrc` |
 
-PowerShell 7.3+: `cargo-cleaner init powershell` uses `pwsh` to locate and
-update `$PROFILE.CurrentUserAllHosts`.
+`<config>` uses `XDG_CONFIG_HOME` when set, otherwise `~/.config` on Unix or
+`%APPDATA%` on Windows. Nushell defaults to `~/Library/Application Support` on macOS.
+Bash login profiles must source `.bashrc`. Cmd integration applies to interactive
+commands, not batch scripts. On Windows, build from source and set `HOME` to your
+user directory; prebuilt Windows distributions are not yet provided.
 
-Nushell: `cargo-cleaner init nu` updates `nushell/config.nu` under
-`XDG_CONFIG_HOME`, or the platform config directory (on macOS,
-`~/Library/Application Support`; on Windows, `%APPDATA%`).
-
-Ion: `cargo-cleaner init ion` updates `$XDG_CONFIG_HOME/ion/initrc`
-(default `~/.config/ion/initrc`).
-
-Fish: `cargo-cleaner init fish` writes
-`$XDG_CONFIG_HOME/fish/conf.d/cargo-cleaner.fish` (default `~/.config/fish/conf.d/`).
-
-Elvish 0.21+: `cargo-cleaner init elvish` updates
-`$XDG_CONFIG_HOME/elvish/rc.elv` (default `~/.config/elvish/rc.elv`,
-or `%APPDATA%/elvish/rc.elv` on Windows).
-
-Cmd: use `cargo-cleaner init cmd` with Clink 1.6.11+. Setup writes
-`cargo-cleaner.lua` under `CLINK_PROFILE` or `%LOCALAPPDATA%/clink`.
-On Windows, set `HOME` to your user directory for cleanup configuration.
-The Cmd alias applies to interactive commands, not batch scripts.
-
-Bash setup writes to `~/.bashrc`; login shells must source it from their profile.
-Open a new shell session and use Cargo normally. Zsh setup adds a function to
-`~/.zshrc` (or `$ZDOTDIR/.zshrc`) and creates the default global config if missing.
-Remove any existing `cargo` alias first; an existing `cargo` function is replaced.
-IDEs and processes invoking Cargo directly are unaffected.
-
-To remove shell integration, run `cargo-cleaner uninstall zsh` and open a new
-shell. The binary and cleanup configs remain installed.
+Setup preserves other config content and creates the default global cleanup config
+if missing. Existing `cargo` functions or aliases may be replaced; remove conflicting
+aliases in Bash, Zsh, or PowerShell first. IDEs invoking Cargo directly are unaffected.
+To remove integration, run `cargo-cleaner uninstall <shell>` and open a new session.
+The binary and cleanup configs remain installed.
 
 ## Configuration
 
@@ -116,7 +107,8 @@ can select a target on another filesystem, which may not free space where needed
 
 ## Development
 
-Install Rust and zsh, then run:
+Install Rust and the shells exercised by the tests (Bash, Elvish, Fish, Nushell,
+PowerShell, Tcsh, Xonsh, and Zsh), then run:
 
 ```sh
 cargo test --all-targets --all-features
@@ -124,7 +116,8 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Tests use temporary projects; shell integration tests require zsh.
+Tests use temporary projects and isolated shell configuration files. Cmd/Clink and
+Ion setup/removal are tested; their runtime behavior also needs native validation.
 
 Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
 `dist-workspace.toml`:
