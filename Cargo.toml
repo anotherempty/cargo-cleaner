@@ -3,12 +3,28 @@ name = "cargo-cleaner"
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
+[workspace]
+resolver = "3"
+
+[workspace.dependencies]
 clap = { version = "4.6.7", features = ["derive"] }
 fs2 = "0.4.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+
+[dependencies]
+clap.workspace = true
+fs2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [lints.clippy]
 unwrap_used = "deny"

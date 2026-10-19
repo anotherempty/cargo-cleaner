@@ -4,6 +4,8 @@ use std::process::{Command, ExitCode};
 
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
+use crate::error::Error;
+
 #[derive(Parser)]
 #[command(
     name = "cargo-cleaner",
@@ -16,7 +18,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn run() -> Result<ExitCode, String> {
+    pub fn run() -> Result<ExitCode, Error> {
         let app = Self::parse();
         match app.command {
             Some(CliCommand::Init { shell }) => {
@@ -26,23 +28,21 @@ impl App {
             Some(CliCommand::Uninstall { shell }) => Self::print(&shell.integration().remove()?),
             Some(CliCommand::Exec { args }) => Self::forward(&args),
             None => {
-                Self::command()
-                    .print_help()
-                    .map_err(|error| format!("failed to write help: {error}"))?;
+                Self::command().print_help().map_err(Error::Help)?;
                 Ok(ExitCode::SUCCESS)
             }
         }
     }
 
-    fn print(text: &str) -> Result<ExitCode, String> {
+    fn print(text: &str) -> Result<ExitCode, Error> {
         io::stdout()
             .lock()
             .write_all(text.as_bytes())
-            .map_err(|error| format!("failed to write output: {error}"))?;
+            .map_err(Error::Output)?;
         Ok(ExitCode::SUCCESS)
     }
 
-    fn forward(args: &[OsString]) -> Result<ExitCode, String> {
+    fn forward(args: &[OsString]) -> Result<ExitCode, Error> {
         crate::cleanup::Cleanup::before_command(args)?;
         let mut command = Command::new("cargo");
         command.args(args);
@@ -52,15 +52,13 @@ impl App {
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            Err(format!("failed to execute cargo: {}", command.exec()))
+            Err(Error::Forward(command.exec()))
         }
 
         #[cfg(not(unix))]
         {
-            let status = command
-                .status()
-                .map_err(|error| format!("failed to execute cargo: {error}"))?;
-            let code = status.code().ok_or("cargo exited without an exit code")?;
+            let status = command.status().map_err(Error::Forward)?;
+            let code = status.code().ok_or(Error::MissingExitCode)?;
             std::process::exit(code);
         }
     }
@@ -85,7 +83,7 @@ enum CliCommand {
     },
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 enum ShellKind {
     Zsh,
 }

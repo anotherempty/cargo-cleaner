@@ -104,7 +104,7 @@ To remove shell integration, run:
 cargo-cleaner uninstall zsh
 ```
 
-This removes the generated function and legacy initialization line from `.zshrc`,
+This removes the generated function from `.zshrc`,
 using the same `ZDOTDIR`/`HOME` selection as setup. Other configuration stays intact;
 repeated removal is safe. The binary and global and project cleanup configurations remain installed.
 Open a new shell, or use `unfunction cargo` to disable it in the current zsh session. To disable only

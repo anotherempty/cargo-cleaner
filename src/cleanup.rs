@@ -1,84 +1,72 @@
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Write;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use serde::Deserialize;
 
+use crate::error::{CargoOperation, Error, FileOperation};
+
 pub struct Cleanup;
 
 impl Cleanup {
-    pub fn before_command(args: &[OsString]) -> Result<(), String> {
+    pub fn before_command(args: &[OsString]) -> Result<(), Error> {
         let Some(invocation) = Invocation::parse(args) else {
             return Ok(());
         };
-        let cwd =
-            std::env::current_dir().map_err(|error| format!("read current directory: {error}"))?;
-        let start = invocation
-            .manifest
-            .as_ref()
-            .map(|path| cwd.join(path))
-            .and_then(|path| path.parent().map(Path::to_path_buf))
-            .unwrap_or_else(|| cwd.clone());
-        let Some((path, config)) = Config::find(&start)? else {
+        let cwd = std::env::current_dir().map_err(Error::CurrentDirectory)?;
+        let manifest = invocation.manifest.as_ref().map(|path| cwd.join(path));
+        let start = manifest.as_deref().and_then(Path::parent).unwrap_or(&cwd);
+        let Some(config) = Config::find(start)? else {
             return Ok(());
         };
-        let (max_target, min_free) = config.limits(&path)?;
-        if max_target.is_none() && min_free.is_none() {
+        if matches!(config.policy, Policy::Disabled) {
             return Ok(());
         }
 
         let workspace = invocation.workspace()?;
-        let target = invocation
-            .target
-            .as_ref()
-            .map(|path| cwd.join(path))
-            .unwrap_or_else(|| workspace.target_directory.clone());
-        let oversized = match max_target {
-            Some(limit) => Self::directory_exceeds(&target, limit)?,
-            None => false,
-        };
-        let low_disk = match min_free {
-            Some(limit) => {
-                fs2::available_space(&workspace.workspace_root).map_err(|error| {
-                    format!(
-                        "read free disk space at {}: {error}",
-                        workspace.workspace_root.display()
-                    )
-                })? < limit
+        let target_override = invocation.target.as_ref().map(|path| cwd.join(path));
+        let target = target_override
+            .as_deref()
+            .unwrap_or(&workspace.target_directory);
+        let reason = match config.policy {
+            Policy::Disabled => None,
+            Policy::MaxTarget(limit) => {
+                Self::directory_exceeds(target, limit)?.then_some("target size threshold exceeded")
             }
-            None => false,
+            Policy::MinFree(limit) => {
+                let available =
+                    fs2::available_space(&workspace.workspace_root).map_err(|source| {
+                        Error::file(FileOperation::FreeSpace, &workspace.workspace_root, source)
+                    })?;
+                (available < limit.get()).then_some("free disk space below minimum")
+            }
         };
-        if oversized || low_disk {
-            eprintln!(
-                "cargo-cleaner: running cargo clean ({})",
-                if oversized {
-                    "target size threshold exceeded"
-                } else {
-                    "free disk space below minimum"
-                }
-            );
+        if let Some(reason) = reason {
+            tracing::info!("cargo-cleaner: running cargo clean ({reason})");
             let status = invocation
-                .command("clean")
+                .command(CargoOperation::Clean)
                 .arg("--target-dir")
-                .arg(&target)
+                .arg(target)
                 .status()
-                .map_err(|error| format!("execute cargo clean: {error}"))?;
+                .map_err(|source| Error::Execute {
+                    operation: CargoOperation::Clean,
+                    source,
+                })?;
             if !status.success() {
-                return Err(format!(
-                    "cargo clean failed ({status}); requested command was not run"
-                ));
+                return Err(Error::CleanFailed(status));
             }
         }
         Ok(())
     }
 
-    fn directory_exceeds(root: &Path, limit: u64) -> Result<bool, String> {
+    fn directory_exceeds(root: &Path, limit: ByteLimit) -> Result<bool, Error> {
         let root = match root.canonicalize() {
             Ok(root) => root,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(format!("resolve {}: {error}", root.display())),
+            Err(error) => return Err(Error::file(FileOperation::Resolve, root, error)),
         };
         let mut pending = vec![root];
         let mut size = 0_u64;
@@ -86,7 +74,7 @@ impl Cleanup {
             let metadata = match fs::symlink_metadata(&path) {
                 Ok(metadata) => metadata,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(format!("inspect {}: {error}", path.display())),
+                Err(error) => return Err(Error::file(FileOperation::Inspect, &path, error)),
             };
             if metadata.is_symlink() {
                 // Do not traverse symlinked trees outside the artifact directory.
@@ -94,17 +82,17 @@ impl Cleanup {
             }
             if metadata.is_dir() {
                 for entry in fs::read_dir(&path)
-                    .map_err(|error| format!("read {}: {error}", path.display()))?
+                    .map_err(|error| Error::file(FileOperation::Read, &path, error))?
                 {
                     pending.push(
                         entry
-                            .map_err(|error| format!("read {}: {error}", path.display()))?
+                            .map_err(|error| Error::file(FileOperation::Read, &path, error))?
                             .path(),
                     );
                 }
             } else if metadata.is_file() {
                 size = size.saturating_add(metadata.len());
-                if size > limit {
+                if size > limit.get() {
                     return Ok(true);
                 }
             }
@@ -113,108 +101,164 @@ impl Cleanup {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct Config {
-    max_target_size_gib: Option<u64>,
-    min_free_space_gib: Option<u64>,
+    policy: Policy,
+}
+
+impl TryFrom<ConfigFields> for Config {
+    type Error = PolicyError;
+
+    fn try_from(fields: ConfigFields) -> Result<Self, Self::Error> {
+        let policy = match (fields.max_target_size_gib, fields.min_free_space_gib) {
+            (Some(_), Some(_)) => return Err(PolicyError::ConflictingThresholds),
+            (Some(value), None) => {
+                Policy::MaxTarget(ByteLimit::from_gib(value, Threshold::MaxTarget)?)
+            }
+            (None, Some(value)) => Policy::MinFree(ByteLimit::from_gib(value, Threshold::MinFree)?),
+            (None, None) => Policy::Disabled,
+        };
+        Ok(Self { policy })
+    }
 }
 
 impl Config {
+    const FILE_NAME: &str = ".cargo-cleaner.toml";
+    // Keep 100 GiB available by default for Cargo builds and other applications.
+    const DEFAULT_MIN_FREE_GIB: u64 = 100;
+
     fn home_path() -> Option<PathBuf> {
         std::env::var_os("HOME")
             .filter(|value| !value.is_empty())
-            .map(|home| PathBuf::from(home).join(".cargo-cleaner.toml"))
+            .map(|home| PathBuf::from(home).join(Self::FILE_NAME))
     }
 
-    pub(crate) fn setup() -> Result<(), String> {
-        let path = Self::home_path().ok_or("cannot locate global config: HOME is not set")?;
+    pub(crate) fn setup() -> Result<(), Error> {
+        let path = Self::home_path().ok_or(Error::MissingHome)?;
         match fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&path)
         {
-            Ok(mut file) => file
-                .write_all(b"min_free_space_gib = 100\n")
-                .map_err(|error| format!("write {}: {error}", path.display())),
+            Ok(mut file) => writeln!(file, "min_free_space_gib = {}", Self::DEFAULT_MIN_FREE_GIB)
+                .map_err(|error| Error::file(FileOperation::Write, &path, error)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 // Report unreadable paths instead of treating directories as config files.
                 fs::read_to_string(&path)
                     .map(|_| ())
-                    .map_err(|error| format!("read {}: {error}", path.display()))
+                    .map_err(|error| Error::file(FileOperation::Read, &path, error))
             }
-            Err(error) => Err(format!("create {}: {error}", path.display())),
+            Err(error) => Err(Error::file(FileOperation::Create, &path, error)),
         }
     }
 
-    fn find(start: &Path) -> Result<Option<(PathBuf, Self)>, String> {
+    fn find(start: &Path) -> Result<Option<Self>, Error> {
         let home = Self::home_path();
         for directory in start.ancestors() {
-            let path = directory.join(".cargo-cleaner.toml");
+            let path = directory.join(Self::FILE_NAME);
             if home.as_ref() == Some(&path) {
                 break;
             }
             if let Some(config) = Self::read(&path)? {
-                return Ok(Some((path, config)));
+                return Ok(Some(config));
             }
         }
-        if let Some(path) = home
-            && let Some(config) = Self::read(&path)?
-        {
-            return Ok(Some((path, config)));
-        }
-        Ok(None)
-    }
-
-    fn read(path: &Path) -> Result<Option<Self>, String> {
-        match fs::read_to_string(path) {
-            Ok(contents) => toml::from_str(&contents)
-                .map(Some)
-                .map_err(|error| format!("invalid {}: {error}", path.display())),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(format!("read {}: {error}", path.display())),
+        match home {
+            Some(path) => Self::read(&path),
+            None => Ok(None),
         }
     }
 
-    fn limits(&self, path: &Path) -> Result<(Option<u64>, Option<u64>), String> {
-        if self.max_target_size_gib.is_some() && self.min_free_space_gib.is_some() {
-            return Err(format!(
-                "{}: set only one of max_target_size_gib or min_free_space_gib",
-                path.display()
-            ));
-        }
-        Ok((
-            Self::bytes(self.max_target_size_gib, "max_target_size_gib", path)?,
-            Self::bytes(self.min_free_space_gib, "min_free_space_gib", path)?,
-        ))
-    }
-
-    fn bytes(value: Option<u64>, name: &str, path: &Path) -> Result<Option<u64>, String> {
-        value
-            .map(|value| {
-                if value == 0 {
-                    return Err(format!(
-                        "{}: {name} must be positive; omit it to disable",
-                        path.display()
-                    ));
-                }
-                value
-                    .checked_mul(1024 * 1024 * 1024)
-                    .ok_or_else(|| format!("{}: {name} is too large", path.display()))
+    fn read(path: &Path) -> Result<Option<Self>, Error> {
+        let contents = match fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(Error::file(FileOperation::Read, path, error)),
+        };
+        let fields: ConfigFields = toml::from_str(&contents).map_err(|source| Error::Config {
+            path: path.to_owned(),
+            source,
+        })?;
+        Self::try_from(fields)
+            .map(Some)
+            .map_err(|source| Error::Policy {
+                path: path.to_owned(),
+                source,
             })
-            .transpose()
     }
 }
 
-struct Invocation {
-    toolchain: Option<OsString>,
-    manifest: Option<PathBuf>,
-    target: Option<PathBuf>,
-    shared: Vec<OsString>,
+// Raw TOML boundary representation; only Config owns a validated policy.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfigFields {
+    max_target_size_gib: Option<u64>,
+    min_free_space_gib: Option<u64>,
 }
 
-impl Invocation {
-    fn parse(args: &[OsString]) -> Option<Self> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Policy {
+    Disabled,
+    MaxTarget(ByteLimit),
+    MinFree(ByteLimit),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ByteLimit(NonZeroU64);
+
+impl ByteLimit {
+    const BYTES_PER_GIB: u64 = 1 << 30;
+
+    fn from_gib(value: u64, threshold: Threshold) -> Result<Self, PolicyError> {
+        let gib = NonZeroU64::new(value).ok_or(PolicyError::Zero(threshold))?;
+        gib.get()
+            .checked_mul(Self::BYTES_PER_GIB)
+            .and_then(NonZeroU64::new)
+            .map(Self)
+            .ok_or(PolicyError::TooLarge(threshold))
+    }
+
+    fn get(self) -> u64 {
+        self.0.get()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum Threshold {
+    MaxTarget,
+    MinFree,
+}
+
+impl std::fmt::Display for Threshold {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::MaxTarget => "max_target_size_gib",
+            Self::MinFree => "min_free_space_gib",
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub(crate) enum PolicyError {
+    #[error("set only one of max_target_size_gib or min_free_space_gib")]
+    ConflictingThresholds,
+    #[error("{0} must be positive; omit it to disable")]
+    Zero(Threshold),
+    #[error("{0} is too large")]
+    TooLarge(Threshold),
+}
+
+struct Invocation<'a> {
+    toolchain: Option<&'a OsStr>,
+    manifest: Option<&'a Path>,
+    target: Option<&'a Path>,
+    shared: Vec<&'a OsStr>,
+}
+
+impl<'a> Invocation<'a> {
+    const METADATA_FORMAT: &str = "--format-version=1";
+
+    fn parse(args: &'a [OsString]) -> Option<Self> {
         let mut result = Self {
             toolchain: None,
             manifest: None,
@@ -226,7 +270,7 @@ impl Invocation {
             .peek()
             .is_some_and(|arg| arg.as_encoded_bytes().starts_with(b"+"))
         {
-            result.toolchain = args.next().cloned();
+            result.toolchain = args.next().map(OsString::as_os_str);
         }
         let mut found_command = false;
         while let Some(arg) = args.next() {
@@ -238,21 +282,21 @@ impl Invocation {
             }
             if arg == "--manifest-path" || arg == "-m" {
                 let value = args.next()?;
-                result.manifest = Some(PathBuf::from(value));
+                result.manifest = Some(Path::new(value));
             } else if arg == "--target-dir" {
-                result.target = Some(PathBuf::from(args.next()?));
+                result.target = Some(Path::new(args.next()?));
             } else if arg == "--config" || arg == "-Z" || arg == "--color" {
-                result.shared.push(arg.clone());
-                result.shared.push(args.next()?.clone());
+                result.shared.push(arg.as_os_str());
+                result.shared.push(args.next()?.as_os_str());
             } else if arg == "--locked" || arg == "--offline" || arg == "--frozen" {
-                result.shared.push(arg.clone());
+                result.shared.push(arg.as_os_str());
             } else if let Some(text) = arg.to_str() {
                 if let Some(value) = text.strip_prefix("--manifest-path=") {
-                    result.manifest = Some(PathBuf::from(value));
+                    result.manifest = Some(Path::new(value));
                 } else if let Some(value) = text.strip_prefix("-m") {
-                    result.manifest = Some(PathBuf::from(value.strip_prefix('=').unwrap_or(value)));
+                    result.manifest = Some(Path::new(value.strip_prefix('=').unwrap_or(value)));
                 } else if let Some(value) = text.strip_prefix("--target-dir=") {
-                    result.target = Some(PathBuf::from(value));
+                    result.target = Some(Path::new(value));
                 } else if text.starts_with("-C") {
                     // Cargo's unstable directory switch changes config resolution.
                     // Forward it untouched rather than clean the wrong workspace.
@@ -261,7 +305,7 @@ impl Invocation {
                     || text.starts_with("--color=")
                     || text.starts_with("-Z")
                 {
-                    result.shared.push(arg.clone());
+                    result.shared.push(arg.as_os_str());
                 } else if !found_command {
                     if matches!(
                         text,
@@ -284,7 +328,9 @@ impl Invocation {
                     } else if text != "--quiet"
                         && text != "--verbose"
                         && !(text.starts_with('-')
-                            && text[1..].chars().all(|c| c == 'v' || c == 'q'))
+                            && text
+                                .strip_prefix('-')
+                                .is_some_and(|flags| flags.chars().all(|c| c == 'v' || c == 'q')))
                     {
                         return None;
                     }
@@ -296,32 +342,34 @@ impl Invocation {
         found_command.then_some(result)
     }
 
-    fn command(&self, subcommand: &str) -> Command {
+    fn command(&self, operation: CargoOperation) -> Command {
         let mut command = Command::new("cargo");
         if let Some(toolchain) = &self.toolchain {
             command.arg(toolchain);
         }
-        command.arg(subcommand).args(&self.shared);
+        command.arg(operation.argument()).args(&self.shared);
         if let Some(manifest) = &self.manifest {
             command.arg("--manifest-path").arg(manifest);
         }
         command
     }
 
-    fn workspace(&self) -> Result<Workspace, String> {
+    fn workspace(&self) -> Result<Workspace, Error> {
         let output = self
-            .command("metadata")
-            .args([OsStr::new("--no-deps"), OsStr::new("--format-version=1")])
+            .command(CargoOperation::Metadata)
+            .args([OsStr::new("--no-deps"), OsStr::new(Self::METADATA_FORMAT)])
             .output()
-            .map_err(|error| format!("execute cargo metadata: {error}"))?;
+            .map_err(|source| Error::Execute {
+                operation: CargoOperation::Metadata,
+                source,
+            })?;
         if !output.status.success() {
-            return Err(format!(
-                "cargo metadata failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
-            ));
+            return Err(Error::MetadataFailed {
+                status: output.status,
+                stderr: output.stderr,
+            });
         }
-        serde_json::from_slice(&output.stdout)
-            .map_err(|error| format!("parse cargo metadata: {error}"))
+        serde_json::from_slice(&output.stdout).map_err(Error::Metadata)
     }
 }
 
@@ -329,4 +377,69 @@ impl Invocation {
 struct Workspace {
     workspace_root: PathBuf,
     target_directory: PathBuf,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ByteLimit, Config, ConfigFields, Policy, PolicyError, Threshold};
+
+    #[test]
+    fn byte_limits_reject_zero_and_overflow_for_each_threshold() {
+        const MAX_GIB: u64 = u64::MAX / ByteLimit::BYTES_PER_GIB;
+        const OVERFLOW_GIB: u64 = MAX_GIB + 1;
+        for threshold in [Threshold::MaxTarget, Threshold::MinFree] {
+            assert_eq!(
+                ByteLimit::from_gib(0, threshold),
+                Err(PolicyError::Zero(threshold))
+            );
+            assert_eq!(
+                ByteLimit::from_gib(OVERFLOW_GIB, threshold),
+                Err(PolicyError::TooLarge(threshold))
+            );
+            assert_eq!(
+                ByteLimit::from_gib(MAX_GIB, threshold).unwrap().get(),
+                MAX_GIB * ByteLimit::BYTES_PER_GIB
+            );
+        }
+    }
+
+    #[test]
+    fn config_conversion_enforces_exclusive_thresholds() {
+        const LIMIT_GIB: u64 = 1;
+        assert_eq!(
+            Config::try_from(ConfigFields {
+                max_target_size_gib: Some(LIMIT_GIB),
+                min_free_space_gib: Some(LIMIT_GIB),
+            }),
+            Err(PolicyError::ConflictingThresholds)
+        );
+        assert_eq!(
+            Config::try_from(ConfigFields {
+                max_target_size_gib: None,
+                min_free_space_gib: None,
+            })
+            .unwrap()
+            .policy,
+            Policy::Disabled
+        );
+        let limit = ByteLimit::from_gib(LIMIT_GIB, Threshold::MaxTarget).unwrap();
+        assert_eq!(
+            Config::try_from(ConfigFields {
+                max_target_size_gib: Some(LIMIT_GIB),
+                min_free_space_gib: None,
+            })
+            .unwrap()
+            .policy,
+            Policy::MaxTarget(limit)
+        );
+        assert_eq!(
+            Config::try_from(ConfigFields {
+                max_target_size_gib: None,
+                min_free_space_gib: Some(LIMIT_GIB),
+            })
+            .unwrap()
+            .policy,
+            Policy::MinFree(limit)
+        );
+    }
 }

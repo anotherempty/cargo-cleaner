@@ -1,5 +1,7 @@
 use std::process::Command;
 
+const USAGE_ERROR_EXIT_CODE: i32 = 2;
+
 #[test]
 fn rejects_unsupported_shell_without_printing_shell_code() {
     let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
@@ -39,7 +41,7 @@ fn clap_handles_help_version_and_invalid_commands() {
             .args(args)
             .output()
             .expect("run CLI");
-        assert_eq!(output.status.code(), Some(2));
+        assert_eq!(output.status.code(), Some(USAGE_ERROR_EXIT_CODE));
         assert!(!output.stderr.is_empty());
     }
 }
@@ -51,24 +53,29 @@ mod zsh {
     use std::path::PathBuf;
     use std::process::Command;
 
+    const EXECUTABLE_MODE: u32 = 0o755;
+    const FORWARDED_EXIT_CODE: i32 = 37;
+    const REPEAT_COUNT: usize = 2;
+    const DEFAULT_CONFIG: &str = "min_free_space_gib = 100\n";
+    const EXISTING_CONFIG: &str = "max_target_size_gib = 7\n";
+
     struct Fixture(PathBuf);
 
     impl Drop for Fixture {
         fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
+            if let Err(error) = fs::remove_dir_all(&self.0) {
+                assert!(std::thread::panicking(), "remove fixture: {error}");
+            }
         }
     }
 
     impl Fixture {
-        fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        fn new() -> std::io::Result<Self> {
             static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let path = std::env::temp_dir().join(format!(
-                "cargo-cleaner-shell-test-{}-{}-{}",
+                "cargo-cleaner-shell-test-{}-{}",
                 std::process::id(),
-                NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)?
-                    .as_nanos()
+                NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             ));
             fs::create_dir(&path)?;
             Ok(Self(path))
@@ -76,15 +83,11 @@ mod zsh {
     }
 
     #[test]
-    fn init_preserves_config_migrates_legacy_and_is_repeatable() {
+    fn init_preserves_config_and_is_repeatable() {
         let fixture = Fixture::new().expect("create fixture");
         let rc = fixture.0.join(".zshrc");
-        fs::write(
-            &rc,
-            "# keep me\neval \"$(cargo-cleaner init zsh)\"\nexport KEEP=yes",
-        )
-        .expect("write config");
-        for _ in 0..2 {
+        fs::write(&rc, "# keep me\nexport KEEP=yes").expect("write config");
+        for _ in 0..REPEAT_COUNT {
             let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                 .args(["init", "zsh"])
                 .env("ZDOTDIR", &fixture.0)
@@ -105,11 +108,11 @@ mod zsh {
         let zsh = fixture.0.join("zsh");
         fs::create_dir(&zsh).unwrap();
         let config = fixture.0.join(".cargo-cleaner.toml");
-        for existing in [None, Some("max_target_size_gib = 7\n"), Some("")] {
+        for existing in [None, Some(EXISTING_CONFIG), Some("")] {
             if let Some(contents) = existing {
                 fs::write(&config, contents).unwrap();
             }
-            for _ in 0..2 {
+            for _ in 0..REPEAT_COUNT {
                 let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                     .args(["init", "zsh"])
                     .env("HOME", &fixture.0)
@@ -119,7 +122,7 @@ mod zsh {
                 assert!(output.status.success(), "{output:?}");
                 assert_eq!(
                     fs::read_to_string(&config).unwrap(),
-                    existing.unwrap_or("min_free_space_gib = 100\n")
+                    existing.unwrap_or(DEFAULT_CONFIG)
                 );
             }
         }
@@ -177,9 +180,9 @@ mod zsh {
             .expect("run init");
         assert!(output.status.success());
         let mut contents = fs::read_to_string(&rc).expect("read config");
-        contents.push_str("eval \"$(cargo-cleaner init zsh)\"\n# trailing config\n");
-        fs::write(&rc, contents).expect("write legacy config");
-        for _ in 0..2 {
+        contents.push_str("# trailing config\n");
+        fs::write(&rc, contents).expect("write trailing config");
+        for _ in 0..REPEAT_COUNT {
             let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                 .args(["uninstall", "zsh"])
                 .env("ZDOTDIR", &fixture.0)
@@ -214,10 +217,11 @@ mod zsh {
         let cargo = fixture.0.join("cargo");
         fs::write(
             &cargo,
-            "#!/bin/sh\nprintf '%s\\0' \"$@\"\nprintf '%s\\0' \"$PWD\" \"$CLEANER_TEST_VALUE\"\nprintf 'cargo diagnostic' >&2\nexit 37\n",
+            "#!/bin/sh\nprintf '%s\\0' \"$@\"\nprintf '%s\\0' \"$PWD\" \"$CLEANER_TEST_VALUE\"\nprintf 'cargo diagnostic' >&2\nexit \"$CLEANER_FORWARD_EXIT\"\n",
         )
         .expect("write fake cargo");
-        fs::set_permissions(&cargo, fs::Permissions::from_mode(0o755)).expect("make executable");
+        fs::set_permissions(&cargo, fs::Permissions::from_mode(EXECUTABLE_MODE))
+            .expect("make executable");
         std::os::unix::fs::symlink(
             env!("CARGO_BIN_EXE_cargo-cleaner"),
             fixture.0.join("cargo-cleaner"),
@@ -245,11 +249,12 @@ mod zsh {
             .env("PATH", std::env::join_paths(paths).expect("join PATH"))
             .env("HOME", &fixture.0)
             .env_remove("ZDOTDIR")
+            .env("CLEANER_FORWARD_EXIT", FORWARDED_EXIT_CODE.to_string())
             .env("CLEANER_TEST_VALUE", "inherited value")
             .output()
             .expect("run zsh; install zsh to run shell integration tests");
 
-        assert_eq!(output.status.code(), Some(37));
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
         assert_eq!(output.stderr, b"cargo diagnostic");
         let expected = format!(
             "+stable\0build\0--manifest-path\0directory with spaces/Cargo.toml\0\0literal * $HOME ;\0{}\0inherited value\0",
