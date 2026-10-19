@@ -710,6 +710,82 @@ esac
         assert!(current.root.join("target/debug/registry-fixture").is_file());
     }
     #[test]
+    fn real_cargo_preserves_symlinked_targets_after_registry_cleanup() {
+        for clean_other_project in [false, true] {
+            let selected = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
+            let current = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
+            for fixture in [&selected, &current] {
+                fs::create_dir(fixture.root.join("src")).unwrap();
+                fs::write(fixture.root.join("src/main.rs"), "fn main() {}\n").unwrap();
+                fs::write(
+                    fixture.root.join("Cargo.toml"),
+                    "[package]\nname = \"symlink-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+                )
+                .unwrap();
+                fs::remove_dir(fixture.root.join("target")).unwrap();
+                let output = Command::new(env!("CARGO"))
+                    .args(["build", "--offline"])
+                    .current_dir(&fixture.root)
+                    .env_remove("CARGO_TARGET_DIR")
+                    .env_remove("CARGO_BUILD_TARGET_DIR")
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            let destination = selected.root.join("artifacts");
+            let target = selected.root.join("target");
+            fs::rename(&target, &destination).unwrap();
+            std::os::unix::fs::symlink(&destination, &target).unwrap();
+            selected
+                .artifact("target/large-marker", OVERSIZED_ARTIFACT_BYTES)
+                .unwrap();
+            assert_eq!(
+                selected.run(&["build"]).unwrap().status.code(),
+                Some(FORWARDED_EXIT_CODE)
+            );
+            selected.global(LOW_DISK_CONFIG).unwrap();
+            let building = if clean_other_project {
+                &current
+            } else {
+                &selected
+            };
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                .args(["exec", "--", "build", "--offline"])
+                .current_dir(&building.root)
+                .env("HOME", selected.root.join("home"))
+                .env_remove("CARGO_TARGET_DIR")
+                .env_remove("CARGO_BUILD_TARGET_DIR")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(target.is_symlink());
+            assert!(destination.is_dir());
+            assert!(!target.join("large-marker").exists());
+            let output = Command::new(env!("CARGO"))
+                .args(["build", "--offline"])
+                .current_dir(&selected.root)
+                .env_remove("CARGO_TARGET_DIR")
+                .env_remove("CARGO_BUILD_TARGET_DIR")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(target.join("debug/symlink-fixture").is_file());
+        }
+    }
+
+    #[test]
     fn concurrent_registration_keeps_both_projects() {
         const PROJECT_COUNT: usize = 2;
         let first = Fixture::with_global(REGISTRATION_CONFIG).unwrap();

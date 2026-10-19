@@ -49,6 +49,11 @@ impl FreeSpacePolicy {
                         project.clean_command()
                     };
                     Cleanup::clean(command, project.target())?;
+                    // Cleaning the canonical path removes the destination of any
+                    // target symlinks. Restore it so those links remain usable.
+                    std::fs::create_dir_all(project.target()).map_err(|source| {
+                        Error::file(FileOperation::Create, project.target(), source)
+                    })?;
                 }
             }
         }
