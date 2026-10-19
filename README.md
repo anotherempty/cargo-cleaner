@@ -27,6 +27,9 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Ion: `cargo-cleaner init ion` updates `$XDG_CONFIG_HOME/ion/initrc`
+(default `~/.config/ion/initrc`).
+
 Fish: `cargo-cleaner init fish` writes
 `$XDG_CONFIG_HOME/fish/conf.d/cargo-cleaner.fish` (default `~/.config/fish/conf.d/`).
 

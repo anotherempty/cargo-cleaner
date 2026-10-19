@@ -92,6 +92,12 @@ mod tests {
     }
 
     #[test]
+    fn ion_setup_and_removal() {
+        let fixture = Fixture::new().unwrap();
+        fixture.lifecycle("ion", ".config/ion/initrc").unwrap();
+    }
+
+    #[test]
     fn fish_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture
