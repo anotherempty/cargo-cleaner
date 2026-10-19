@@ -1,45 +1,91 @@
-# Agent instructions
+# Repository instructions
 
-## Project skills
+## Communication
 
-Use [git-workflow](.agents/skills/git-workflow/SKILL.md) for all Git and pull request work in this repository.
+- Use concise, direct language. Preserve technical accuracy, constraints, and important reasoning.
+- Avoid filler, repetition, and unnecessary detail.
+- Use numbered lists when presenting multiple items.
+- The user has the final decision on all project matters. Follow their decisions rather than substituting your preferences.
+- Warn only when you believe the user's decision is mistaken; explain the specific concern briefly, then respect their final decision.
 
-Use [rust-quality](.agents/skills/rust-quality/SKILL.md) for Rust formatting and Clippy checks with warnings denied.
+## Development stage
 
-## Rust structures
+- This project is in early development, not a released library with existing users or production datasets.
+- Change APIs and storage formats directly as implementation evolves.
+- Do not add backward-compatibility layers, migration tools, legacy-format tests, or migration warnings unless the user explicitly requests them.
+- Do not assume prototype code or temporary test repositories require compatibility or migration support.
 
-1. Keep each type and its implementations together: definition -> trait implementations -> inherent implementations.
-2. Do not insert unrelated types between a type definition and its implementations.
-3. Apply this ordering to structs and enums. Keep related documentation and attributes with their item.
-4. Prefer explicit types and simple ownership: borrow through &T, &mut T, &str, or slices when ownership transfer is unnecessary; take ownership when storage, lifetimes, or API semantics require it. Avoid unnecessary cloning. Introduce abstractions only for existing needs.
-5. Keep fields private unless callers need direct access. Use constructors when initialization must preserve invariants.
-6. Handle recoverable failures with `Result` and propagate errors with useful context. Do not use `unwrap()`, `expect()`, `unwrap_err()`, `expect_err()`, or their unchecked variants outside test code. Likewise, use `panic!`, `todo!`, and `unimplemented!` only in test code. Documented invariants do not exempt non-test code from this rule; handle failures explicitly instead.
-7. Use object-oriented design adapted to Rust: encapsulate related state and behavior in structs or enums, expose behavior through methods, prefer composition, and use traits for shared interfaces when needed. Do not define standalone helper functions. Keep behavior in the relevant type's `impl` block or inline trivial wrappers. Only required entry points and test functions remain free functions. Avoid artificial types or unnecessary abstractions solely to imitate class hierarchies.
+## Rust
 
-## Module layout
+### Dependencies
 
-1. Use a single file (`module_name.rs`) when a module fits in one file.
-2. When a module contains multiple files, use a directory (`module_name/`) with `mod.rs` as its entry point and place its submodules inside that directory.
-3. Place out-of-line module declarations (`mod name;` or `pub mod name;`) at the top of the file, after file-level attributes such as `#![cfg(...)]`. Keep declaration-specific attributes such as `#[cfg(...)]` immediately above their declaration. Place inline modules (`mod name { ... }`), including test modules, at the bottom of the file.
+- Declare all dependencies in root `Cargo.toml` under `[workspace.dependencies]`.
+- Member crates must inherit dependencies using `workspace = true`, including development and build dependencies.
+- Do not declare dependency versions, sources, or paths directly in member crates.
 
-## Commits and pull requests
+### Type organization
 
-1. Keep each commit and pull request focused on one logical change. Avoid unrelated cleanup.
-2. Use Conventional Commits for commit subjects and PR titles: `type: short description`, with an optional scope when it adds clarity (`fix(cli): preserve forwarded arguments`). Use `feat` for new behavior, `fix` for bug fixes, and `docs`, `refactor`, `test`, `build`, `ci`, or `chore` as appropriate.
-3. Write concise, imperative subjects (for example, `add`, not `added`) without a trailing period. Use normal technical prose. Add a commit body only when rationale or context is not obvious from the subject and diff.
-4. Mark breaking changes with `!` before the colon and explain the impact and migration in a `BREAKING CHANGE:` footer.
-5. Start PR descriptions with the problem and resulting behavior. For small changes, use one or two sentences plus validation. Include relevant checks and their actual results; state when checks were not run and why. Add risks, migration steps, and issue links only when relevant.
-6. Keep PR titles and descriptions aligned with the final diff. Omit conversation history, abandoned approaches, and boilerplate sections that add no useful information.
+- Keep each type and its implementations together: type definition, trait implementations, then inherent implementations.
+- Do not place unrelated types between a type definition and its implementations.
 
-References: [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) and [GitHub review guidance](https://docs.github.com/en/pull-requests/concepts/helping-others-review-your-changes).
+### Modules
 
-## Interaction
+- Prefer a module directory with `mod.rs` when multiple files belong to that module.
+- Use a single `module_name.rs` file when the module needs only one file.
+- Place out-of-line module declarations (`mod name;`) at the top of the file, after file-level configuration and attributes. Keep declaration-specific attributes attached to their declarations.
+- Place inline module definitions (`mod name { ... }`) at the bottom of the file, including test modules.
 
-1. Use terse, precise communication. Prefer short sentences; omit filler and repetition.
-2. Preserve technical accuracy, constraints, edge cases, and tradeoffs. Use normal prose when compression would obscure meaning or risk.
-3. Use numbered lists for multiple points. Preserve exact identifiers, commands, and error messages.
-4. Act on clear requests. Make routine, reversible choices without repeated confirmation.
-5. Ask concise questions when missing information materially affects scope or correctness. Continue independent work while awaiting answers.
-6. Give brief progress updates during sustained work. Report changes, validation, and unresolved limitations at completion.
-7. Do not claim checks passed unless they were run successfully. Explain blocked actions and their causes.
-8. The user has the final say on decisions. Explicit user instructions override repository guidance and agent preferences. Explain material tradeoffs, then follow the user's decision within applicable system and developer constraints.
+### Errors and panics
+
+- Do not use `unwrap`, `expect`, `panic!`, `todo!`, `unimplemented!`, or other deliberate panic paths outside tests.
+- Avoid operations that can panic on unchecked input, including unchecked indexing.
+- Assertions and panic-based checks are permitted in tests only.
+- Use concrete error types with meaningful variants and typed context.
+- Propagate recoverable errors using `Result` and `?`; do not silently discard errors.
+- Do not erase errors into strings or general-purpose boxed error types.
+
+### Domain types
+
+- Use `String` and `str` for text only.
+- Represent identifiers, states, actions, positions, quantities, paths, and other non-text concepts with appropriate concrete types, enums, structs, or newtypes.
+- A newtype must use storage appropriate to its domain; wrapping a `String` does not make encoded non-text data a proper domain model.
+- Store fixed-length binary values, such as hashes, in fixed-size byte arrays with named length constants. Represent supported formats or lengths with explicit enum variants when needed; do not use `String` or variable-length buffers for fixed-length values.
+- Decode hexadecimal, Base64, and other wire encodings at input boundaries; encode only at output boundaries. Do not retain encoded text as the internal source of truth for binary values.
+- Before adding or changing a domain type, verify that its underlying representation expresses known size, range, and variant constraints, rather than relying solely on runtime validation of a generic container.
+- Parse and validate external text at boundaries; keep internal domain values typed.
+- Put parsing, validation, normalization, and invariant enforcement in the domain type that owns the value. For example, endpoint URL rules belong in the endpoint structure, not configuration or client code.
+- Enforce those rules through constructors, conversions, and deserialization. Keep representation private and ensure public operations preserve invariants; callers must not repeat the type's validation.
+
+### Whole-type review
+
+- Whenever adding or changing a type, review the complete type and affected callers before reporting completion; do not stop at the individual issue the user identified.
+- Check storage representation, size and range constraints, construction and mutation invariants, parsing and serialization boundaries, error behavior, trait implementations, and ownership semantics together.
+- Reevaluate trait derives after representation changes. Derive `Copy` for small value types whose fields support it and whose semantics permit unrestricted duplication; do not apply it to resource ownership or secret-bearing types merely because their fields allow it. Assess `Clone`, `Eq`, `Ord`, and `Hash` for domain-correct semantics rather than retaining or adding them mechanically.
+- Update affected callers in the same change, removing redundant clones, allocations, conversions, and duplicated validation made obsolete by the new model.
+- Verify affected behavior with appropriate tests and lint checks, and manually inspect constraints those checks cannot prove. Passing compilation alone is not a complete review.
+- Resolve related omissions within the changed type and its affected usage without waiting for the user to identify each one. Report unrelated findings separately rather than expanding into an unsolicited repository-wide rewrite.
+
+### Numeric values
+
+- Do not use magic numbers: numeric values with domain, protocol, or operational meaning must have meaningful names, including in tests.
+- Use named constants or associated constants for fixed values, existing typed constants or enums for protocol values, and typed configuration fields for configurable policies.
+- Names must explain purpose and units where applicable, such as timeout duration, byte limit, or retry count; names that merely spell out the number are insufficient.
+- Keep numeric definitions with the type or module that owns their meaning. Document non-obvious values and their rationale.
+
+### Ownership
+
+- Prefer borrowing through references when ownership does not need to change.
+- Consume values when transferring ownership or expressing a state transition.
+- Avoid unnecessary cloning and shared ownership.
+
+### Design
+
+- Prefer object-oriented design using structs, enums, traits, and associated methods over functional programming patterns.
+- Associate behavior with the type or domain concept responsible for it.
+- Use free functions only when behavior cannot reasonably belong to an object-oriented concept. Language-required entry points such as `main` are exempt.
+
+### Diagnostics
+
+- Use `tracing` for diagnostics and logging.
+- Do not use `print!`, `println!`, `eprint!`, `eprintln!`, or `dbg!`.
+- Keep protocol output separate from diagnostics; send tracing output to stderr when stdout carries MCP traffic.
