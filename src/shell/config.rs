@@ -1,0 +1,37 @@
+use std::io;
+use std::path::Path;
+
+use crate::error::{Error, FileOperation};
+
+pub(super) struct ShellConfig;
+
+impl ShellConfig {
+    pub(super) fn update(path: &Path, script: &str, action: Action) -> Result<(), Error> {
+        let original = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
+            Err(error) => return Err(Error::file(FileOperation::Read, path, error)),
+        };
+        let contents = match action {
+            Action::Remove if original.contains(script) => original.replace(script, ""),
+            Action::Install if !original.contains(script) => {
+                let mut contents = original;
+                if !contents.is_empty() && !contents.ends_with('\n') {
+                    contents.push('\n');
+                }
+                contents.push_str(script);
+                contents
+            }
+            _ => return Ok(()),
+        };
+        std::fs::write(path, contents)
+            .map_err(|error| Error::file(FileOperation::Write, path, error))?;
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Action {
+    Install,
+    Remove,
+}

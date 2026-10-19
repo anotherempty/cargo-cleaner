@@ -5,7 +5,7 @@ A Cargo wrapper that automatically frees disk space before build commands. It ru
 
 ## Setup
 
-Requires Cargo and zsh. Install a prebuilt binary for Linux or macOS (x86_64 or
+Requires Cargo and a supported shell. Install a prebuilt binary for Linux or macOS (x86_64 or
 ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
@@ -26,7 +26,9 @@ Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 cargo-cleaner init zsh
 ```
 
-Open a new zsh session and use Cargo normally. Setup adds a function to
+Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Bash setup writes to `~/.bashrc`; login shells must source it from their profile.
+Open a new shell session and use Cargo normally. Zsh setup adds a function to
 `~/.zshrc` (or `$ZDOTDIR/.zshrc`) and creates the default global config if missing.
 Remove any existing `cargo` alias first; an existing `cargo` function is replaced.
 IDEs and processes invoking Cargo directly are unaffected.

@@ -1,8 +1,8 @@
-use std::io;
 use std::path::PathBuf;
 
 use super::Shell;
-use crate::error::{Error, FileOperation};
+use super::config::{Action, ShellConfig};
+use crate::error::Error;
 
 pub struct Zsh;
 
@@ -33,33 +33,7 @@ impl Zsh {
             .or_else(|| std::env::var_os("HOME").filter(|value| !value.is_empty()))
             .ok_or(Error::MissingShellDirectory)?;
         let path = PathBuf::from(directory).join(".zshrc");
-        let original = match std::fs::read_to_string(&path) {
-            Ok(contents) => contents,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
-            Err(error) => return Err(Error::file(FileOperation::Read, &path, error)),
-        };
-        let contents = match action {
-            Action::Remove if original.contains(Self::ZSH_INIT) => {
-                original.replace(Self::ZSH_INIT, "")
-            }
-            Action::Install if !original.contains(Self::ZSH_INIT) => {
-                let mut contents = original;
-                if !contents.is_empty() && !contents.ends_with('\n') {
-                    contents.push('\n');
-                }
-                contents.push_str(Self::ZSH_INIT);
-                contents
-            }
-            _ => return Ok(path),
-        };
-        std::fs::write(&path, contents)
-            .map_err(|error| Error::file(FileOperation::Write, &path, error))?;
+        ShellConfig::update(&path, Self::ZSH_INIT, action)?;
         Ok(path)
     }
-}
-
-#[derive(Clone, Copy)]
-enum Action {
-    Install,
-    Remove,
 }
