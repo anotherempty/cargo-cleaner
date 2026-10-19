@@ -29,44 +29,47 @@ missing. Existing files, including empty files, are preserved. `HOME` must be se
 
 ## Global configuration and project overrides
 
-The global `~/.cargo-cleaner.toml` supplies the default policy for all projects,
-including projects outside your home directory. Edit it to change the default.
-Project configuration replaces the global policy entirely; thresholds are not merged.
-
-Create `.cargo-cleaner.toml` in your project or workspace root:
-
-```toml
-max_target_size_gib = 20
-```
-
-Or choose a free-space threshold instead:
+Set the global free-space policy in `~/.cargo-cleaner.toml`:
 
 ```toml
 min_free_space_gib = 100
 ```
 
-Set at most one threshold, as a positive integer in GiB (1,073,741,824 bytes):
+`min_free_space_gib` is global-only. Project files cannot override or disable it;
+putting this key in a project file is an error. The global configuration is always
+read and validated, even when a project has its own configuration. Omitting this
+key from the global file disables the free-space policy and registry operations.
+The 100 GiB default is written only during setup.
 
-- `max_target_size_gib`: clean when the Cargo target directory's total file size
-  is **greater than** this limit.
-- `min_free_space_gib`: clean when available space on the filesystem containing
-  the workspace root is **less than** this minimum. It cleans the largest recorded
-  target directory, which may belong to another project.
+Set a local target-size limit in your project's `.cargo-cleaner.toml`:
 
-The selected condition triggers one `cargo clean` before the requested command.
-Setting both thresholds is an error and stops the command before Cargo runs.
-An empty project file disables automatic cleanup even when the global config has
-a threshold. If neither a project nor global config exists, cleanup is skipped;
-the 100 GiB default is written only during setup.
+```toml
+max_target_size_gib = 20
+```
 
-The nearest `.cargo-cleaner.toml` is found by searching upward from the current
-directory, or from the manifest directory when `--manifest-path` is supplied.
-A nearer file replaces the parent configuration; settings are not merged.
-Search stops at the home directory when reached. If no project config is found,
-the global config is used. An overridden global config is not read or validated.
-Put the file at the workspace root to share thresholds across its members.
-Unknown keys, invalid values, measurement errors, and failed cleanup stop the
-requested command with a diagnostic.
+The global file can also provide `max_target_size_gib` as a default. The nearest
+project file replaces only that size policy. An empty project file disables the
+local size policy while leaving the global free-space policy active. Both
+thresholds can be present in the global file and operate independently.
+
+Thresholds are positive integers in GiB (1,073,741,824 bytes):
+
+- `min_free_space_gib`: clean the largest registered target when available space
+  on the current workspace's filesystem is **less than** this minimum.
+- `max_target_size_gib`: clean the current target when its total file size is
+  **greater than** this limit.
+
+The global free-space policy runs first, including registration of the current
+project, followed by the size policy. If different projects exceed the two
+conditions, each policy can clean its selected target. If the free-space cleanup
+removes the current target, the size check sees it as empty.
+
+The nearest project `.cargo-cleaner.toml` is found by searching upward from the
+current directory, or the manifest directory when `--manifest-path` is supplied.
+Search stops at the home directory when reached. A nearer project file replaces
+the parent's size policy. Put the file at the workspace root to share the size
+limit across its members. Unknown keys, invalid values, measurement errors, and
+failed cleanup stop the requested command with a diagnostic.
 
 Checks run for `build`, `check`, `test`, `run`, `bench`, `doc`, `clippy`, `rustc`,
 and `rustdoc`, including the standard single-letter aliases. Explicit `clean`,
@@ -84,22 +87,22 @@ nested symlinks. Missing artifact directories count as empty.
 Cleanup removes the **whole selected target directory's Cargo artifacts**, even
 when building only one package or profile. Shared target directories can contain
 other projects' artifacts. Source files remain intact, but the next build must
-rebuild artifacts. Cleanup runs once; it does not guarantee enough space for the
+rebuild artifacts. Each policy cleans at most once; this does not guarantee enough space for the
 next build and does not coordinate a separate clean/build transaction with other
 Cargo processes. Cargo's own locking still applies.
 
 ## Project registry
 
-Before each supported build command, Cargo metadata identifies the current
-workspace and target directory. If the target directory exists, the project is
-registered in `~/.cargo-cleaner/projects.toml` before cleanup is evaluated.
+When the global free-space policy is configured, it identifies the current
+workspace and target directory before each supported build command. If the target
+directory exists, the policy registers the project in `~/.cargo-cleaner/projects.toml` before cleanup is evaluated.
 `HOME` must be set. Projects are discovered through wrapper invocations; there is
 no filesystem-wide scan. A first build without a target directory is registered
 on a later invocation after the target exists.
 
-Registration also runs when no cleanup policy is configured or an empty config
-disables cleanup for the current invocation. Such a project can still be selected
-by a later invocation's free-space policy. Canonical target paths are deduplicated,
+Registration runs even when free space is sufficient or an empty project config
+disables the local size policy. Without a global free-space threshold, the registry
+is neither read nor updated. Canonical target paths are deduplicated,
 including targets shared by multiple workspaces. Missing target directories and
 workspaces without a `Cargo.toml` are removed from the registry. Updates use a file
 lock and atomic replacement to preserve registrations from concurrent commands.
@@ -136,7 +139,8 @@ This removes the generated function from `.zshrc`,
 using the same `ZDOTDIR`/`HOME` selection as setup. Other configuration stays intact;
 repeated removal is safe. The binary and global and project cleanup configurations remain installed.
 Open a new shell, or use `unfunction cargo` to disable it in the current zsh session. To disable only
-cleanup for a project, leave its `.cargo-cleaner.toml` empty.
+size-based cleanup for a project, leave its `.cargo-cleaner.toml` empty. The global
+free-space policy continues to apply.
 
 ## Development
 

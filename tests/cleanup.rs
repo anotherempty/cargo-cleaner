@@ -28,6 +28,7 @@ mod tests {
     const SUCCESS_EXIT_CODE: i32 = 0;
     const TARGET_LIMIT_CONFIG: &str = "max_target_size_gib = 1";
     // An intentionally unattainable free-space requirement forces cleanup.
+    const REGISTRATION_CONFIG: &str = "min_free_space_gib = 1";
     const LOW_DISK_CONFIG: &str = "min_free_space_gib = 1000000000";
 
     #[derive(Debug, thiserror::Error)]
@@ -81,6 +82,16 @@ esac
             Ok(Self {
                 root: root.canonicalize()?,
             })
+        }
+
+        fn with_global(config: &str) -> std::io::Result<Self> {
+            let fixture = Self::new("")?;
+            fixture.global(config)?;
+            Ok(fixture)
+        }
+
+        fn global(&self, config: &str) -> std::io::Result<()> {
+            fs::write(self.root.join("home/.cargo-cleaner.toml"), config)
         }
 
         fn command(&self, args: &[&str]) -> Result<Command, FixtureError> {
@@ -172,7 +183,7 @@ esac
 
     #[test]
     fn low_disk_alone_triggers_cleanup() {
-        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         assert_eq!(
             fixture.run(&["check"]).unwrap().status.code(),
             Some(FORWARDED_EXIT_CODE)
@@ -250,20 +261,19 @@ esac
     }
 
     #[test]
-    fn both_thresholds_are_rejected_before_running_cargo() {
+    fn project_free_space_setting_is_rejected_before_running_cargo() {
         let fixture = Fixture::new(CONFLICTING_THRESHOLDS_CONFIG).unwrap();
         let output = fixture.run(&["build"]).unwrap();
         assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
         assert!(
-            String::from_utf8_lossy(&output.stderr)
-                .contains("set only one of max_target_size_gib or min_free_space_gib")
+            String::from_utf8_lossy(&output.stderr).contains("unknown field `min_free_space_gib`")
         );
         assert!(fixture.calls().unwrap().is_empty());
     }
 
     #[test]
     fn failed_clean_blocks_build() {
-        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         let output = fixture
             .command(&["build"])
             .unwrap()
@@ -309,15 +319,12 @@ esac
                 fixture.run(&["build"]).unwrap().status.code(),
                 Some(FORWARDED_EXIT_CODE)
             );
-            assert_eq!(
-                fixture.calls().unwrap(),
-                "metadata --no-deps --format-version=1\nbuild\n"
-            );
+            assert_eq!(fixture.calls().unwrap(), "build\n");
         }
     }
 
     #[test]
-    fn global_config_applies_outside_home_and_project_config_replaces_it() {
+    fn global_free_space_cannot_be_disabled_by_project_config() {
         for project in [None, Some(""), Some(TARGET_LIMIT_CONFIG)] {
             let fixture = Fixture::new(project.unwrap_or("")).unwrap();
             fs::write(
@@ -332,36 +339,25 @@ esac
                 fixture.run(&["build"]).unwrap().status.code(),
                 Some(FORWARDED_EXIT_CODE)
             );
-            assert_eq!(
-                fixture.calls().unwrap().contains("clean --target-dir"),
-                project.is_none()
-            );
+            assert!(fixture.calls().unwrap().contains("clean --target-dir"));
         }
     }
 
     #[test]
-    fn invalid_global_config_blocks_build_unless_project_overrides_it() {
-        let fixture = Fixture::new("").unwrap();
-        fs::write(
-            fixture.root.join("home/.cargo-cleaner.toml"),
-            "invalid toml",
-        )
-        .unwrap();
-        assert_eq!(
-            fixture.run(&["build"]).unwrap().status.code(),
-            Some(FORWARDED_EXIT_CODE)
-        );
-        fs::remove_file(fixture.root.join("calls")).unwrap();
-        fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
-        let output = fixture.run(&["build"]).unwrap();
-        assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
-        assert!(String::from_utf8_lossy(&output.stderr).contains("invalid"));
-        assert!(fixture.calls().unwrap().is_empty());
+    fn invalid_global_config_blocks_build_even_with_project_override() {
+        for project in ["", TARGET_LIMIT_CONFIG] {
+            let fixture = Fixture::new(project).unwrap();
+            fixture.global("invalid toml").unwrap();
+            let output = fixture.run(&["build"]).unwrap();
+            assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
+            assert!(String::from_utf8_lossy(&output.stderr).contains("invalid"));
+            assert!(fixture.calls().unwrap().is_empty());
+        }
     }
 
     #[test]
     fn nearest_config_overrides_parent_and_symlinks_are_not_traversed() {
-        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let fixture = Fixture::new("invalid parent config").unwrap();
         fs::write(
             fixture.root.join("member/.cargo-cleaner.toml"),
             TARGET_LIMIT_CONFIG,
@@ -419,7 +415,7 @@ esac
         );
         let marker = fixture.root.join("custom-target/cleanup-marker");
         fs::write(&marker, "old artifact").unwrap();
-        fs::write(fixture.root.join(".cargo-cleaner.toml"), LOW_DISK_CONFIG).unwrap();
+        fixture.global(LOW_DISK_CONFIG).unwrap();
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
             .args(["exec", "--", "build", "--offline"])
             .current_dir(fixture.root.join("member/src"))
@@ -487,14 +483,15 @@ esac
     fn low_disk_selects_largest_registered_project_and_preserves_forwarding() {
         const SMALL_BYTES: u64 = 8;
         const LARGE_BYTES: u64 = 32;
-        let large = Fixture::new("").unwrap();
+        let large = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         large.artifact("target/artifact", LARGE_BYTES).unwrap();
         assert_eq!(
             large.run(&["build"]).unwrap().status.code(),
             Some(FORWARDED_EXIT_CODE)
         );
-        let small = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let small = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         small.artifact("target/artifact", SMALL_BYTES).unwrap();
+        large.global(LOW_DISK_CONFIG).unwrap();
         let output = small
             .command(&["+stable", "build", "--config", "net.offline=true"])
             .unwrap()
@@ -523,14 +520,15 @@ esac
     fn current_project_is_registered_before_largest_selection() {
         const SMALL_BYTES: u64 = 8;
         const LARGE_BYTES: u64 = 32;
-        let small = Fixture::new("").unwrap();
+        let small = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         small.artifact("target/artifact", SMALL_BYTES).unwrap();
         assert_eq!(
             small.run(&["build"]).unwrap().status.code(),
             Some(FORWARDED_EXIT_CODE)
         );
-        let large = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let large = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         large.artifact("target/artifact", LARGE_BYTES).unwrap();
+        small.global(LOW_DISK_CONFIG).unwrap();
         let output = large
             .command(&["build"])
             .unwrap()
@@ -552,7 +550,7 @@ esac
     #[test]
     fn size_policy_still_cleans_current_project_with_a_larger_registered_project() {
         const LARGER_BYTES: u64 = OVERSIZED_ARTIFACT_BYTES * 2;
-        let large = Fixture::new("").unwrap();
+        let large = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         large.artifact("target/artifact", LARGER_BYTES).unwrap();
         assert_eq!(
             large.run(&["build"]).unwrap().status.code(),
@@ -587,7 +585,7 @@ esac
     fn registry_deduplicates_targets_and_prunes_removed_projects() {
         const PROJECT_COUNT: usize = 1;
         const REGISTRATION_ATTEMPTS: usize = 2;
-        let old = Fixture::new("").unwrap();
+        let old = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         for _ in 0..REGISTRATION_ATTEMPTS {
             assert_eq!(
                 old.run(&["build"]).unwrap().status.code(),
@@ -601,7 +599,8 @@ esac
             PROJECT_COUNT
         );
         fs::remove_dir_all(old.root.join("target")).unwrap();
-        let current = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let current = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
+        old.global(LOW_DISK_CONFIG).unwrap();
         let output = current
             .command(&["build"])
             .unwrap()
@@ -622,7 +621,7 @@ esac
 
     #[test]
     fn missing_targets_are_not_registered_or_cleaned() {
-        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         fs::remove_dir_all(fixture.root.join("target")).unwrap();
         assert_eq!(
             fixture.run(&["build"]).unwrap().status.code(),
@@ -641,7 +640,7 @@ esac
 
     #[test]
     fn malformed_registry_is_not_overwritten_and_blocks_cleanup() {
-        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         let directory = fixture.root.join("home/.cargo-cleaner");
         fs::create_dir(&directory).unwrap();
         let path = directory.join("projects.toml");
@@ -654,8 +653,8 @@ esac
 
     #[test]
     fn real_cargo_cleans_largest_other_project_before_building_current_project() {
-        let old = Fixture::new("").unwrap();
-        let current = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let old = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
+        let current = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
         for fixture in [&old, &current] {
             fs::create_dir(fixture.root.join("src")).unwrap();
             fs::write(fixture.root.join("src/main.rs"), "fn main() {}\n").unwrap();
@@ -684,6 +683,12 @@ esac
             .unwrap();
         fs::write(current.root.join("target/keep-marker"), "keep").unwrap();
         for fixture in [&old, &current] {
+            old.global(if fixture.root == current.root {
+                LOW_DISK_CONFIG
+            } else {
+                REGISTRATION_CONFIG
+            })
+            .unwrap();
             let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
                 .args(["exec", "--", "build", "--offline"])
                 .current_dir(&fixture.root)
@@ -706,8 +711,8 @@ esac
     #[test]
     fn concurrent_registration_keeps_both_projects() {
         const PROJECT_COUNT: usize = 2;
-        let first = Fixture::new("").unwrap();
-        let second = Fixture::new("").unwrap();
+        let first = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
+        let second = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         let mut first_process = first
             .command(&["build"])
             .unwrap()
@@ -742,8 +747,8 @@ esac
     #[test]
     fn shared_target_is_registered_once_across_projects() {
         const PROJECT_COUNT: usize = 1;
-        let first = Fixture::new("").unwrap();
-        let second = Fixture::new("").unwrap();
+        let first = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
+        let second = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
         assert_eq!(
             first.run(&["build"]).unwrap().status.code(),
             Some(FORWARDED_EXIT_CODE)
@@ -764,5 +769,103 @@ esac
             registry["projects"].as_array().unwrap().len(),
             PROJECT_COUNT
         );
+    }
+    #[test]
+    fn project_free_space_override_is_rejected_even_with_global_policy() {
+        let fixture = Fixture::new(REGISTRATION_CONFIG).unwrap();
+        fixture.global(LOW_DISK_CONFIG).unwrap();
+        let output = fixture.run(&["build"]).unwrap();
+        assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("unknown field `min_free_space_gib`")
+        );
+        assert!(fixture.calls().unwrap().is_empty());
+    }
+
+    #[test]
+    fn registry_is_unused_without_global_free_space_policy() {
+        for project in ["", TARGET_LIMIT_CONFIG] {
+            let fixture = Fixture::new(project).unwrap();
+            assert_eq!(
+                fixture.run(&["build"]).unwrap().status.code(),
+                Some(FORWARDED_EXIT_CODE)
+            );
+            let directory = fixture.root.join("home/.cargo-cleaner");
+            assert!(!directory.exists());
+            fs::create_dir(&directory).unwrap();
+            let registry = directory.join("projects.toml");
+            fs::write(&registry, "invalid registry").unwrap();
+            assert_eq!(
+                fixture.run(&["build"]).unwrap().status.code(),
+                Some(FORWARDED_EXIT_CODE)
+            );
+            assert_eq!(fs::read_to_string(registry).unwrap(), "invalid registry");
+        }
+    }
+
+    #[test]
+    fn project_size_limit_overrides_global_size_default() {
+        const LARGER_TARGET_LIMIT: &str = "max_target_size_gib = 2";
+        for project in [None, Some(""), Some(LARGER_TARGET_LIMIT)] {
+            let fixture = Fixture::new(project.unwrap_or("")).unwrap();
+            fixture.global(TARGET_LIMIT_CONFIG).unwrap();
+            fixture
+                .artifact("target/artifact", OVERSIZED_ARTIFACT_BYTES)
+                .unwrap();
+            if project.is_none() {
+                fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+            }
+            assert_eq!(
+                fixture.run(&["build"]).unwrap().status.code(),
+                Some(FORWARDED_EXIT_CODE)
+            );
+            assert_eq!(
+                fixture.calls().unwrap().contains("clean --target-dir"),
+                project.is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn global_free_space_runs_before_local_size_cleanup() {
+        const LARGER_BYTES: u64 = OVERSIZED_ARTIFACT_BYTES * 2;
+        let old = Fixture::with_global(REGISTRATION_CONFIG).unwrap();
+        old.artifact("target/artifact", LARGER_BYTES).unwrap();
+        assert_eq!(
+            old.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        old.global(LOW_DISK_CONFIG).unwrap();
+        let current = Fixture::new(TARGET_LIMIT_CONFIG).unwrap();
+        current
+            .artifact("target/artifact", OVERSIZED_ARTIFACT_BYTES)
+            .unwrap();
+        let output = current
+            .command(&["build"])
+            .unwrap()
+            .env("HOME", old.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        let calls = current.calls().unwrap();
+        let cleans: Vec<_> = calls
+            .lines()
+            .filter(|line| line.starts_with("clean "))
+            .collect();
+        assert_eq!(
+            cleans,
+            [
+                format!(
+                    "clean --manifest-path {} --target-dir {}",
+                    old.root.join("Cargo.toml").display(),
+                    old.root.join("target").display()
+                ),
+                format!(
+                    "clean --target-dir {}",
+                    current.root.join("target").display()
+                ),
+            ]
+        );
+        assert_eq!(calls.lines().last(), Some("build"));
     }
 }
