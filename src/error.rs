@@ -40,6 +40,18 @@ pub enum Error {
         path: PathBuf,
         source: crate::cleanup::PolicyError,
     },
+    #[error("project registry {}: {source}", path.display())]
+    RegistryRead {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
+    #[error("serialize project registry {}: {source}", path.display())]
+    RegistryWrite {
+        path: PathBuf,
+        source: toml::ser::Error,
+    },
+    #[error("cannot locate project registry: HOME is not set")]
+    MissingRegistryHome,
     #[error("cannot locate global config: HOME is not set")]
     MissingHome,
     #[error("cannot locate .zshrc: neither ZDOTDIR nor HOME is set")]
@@ -67,6 +79,7 @@ pub enum FileOperation {
     Resolve,
     Inspect,
     FreeSpace,
+    Lock,
 }
 
 impl fmt::Display for FileOperation {
@@ -78,6 +91,7 @@ impl fmt::Display for FileOperation {
             Self::Resolve => "resolve",
             Self::Inspect => "inspect",
             Self::FreeSpace => "read free disk space at",
+            Self::Lock => "lock",
         })
     }
 }

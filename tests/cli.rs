@@ -56,7 +56,7 @@ mod zsh {
     const EXECUTABLE_MODE: u32 = 0o755;
     const FORWARDED_EXIT_CODE: i32 = 37;
     const REPEAT_COUNT: usize = 2;
-    const DEFAULT_CONFIG: &str = "min_free_space_gib = 100\n";
+    const DEFAULT_CONFIG: &str = "[free_space]\nmin_free_space_gib = 100\nacross_projects = true\n";
     const EXISTING_CONFIG: &str = "max_target_size_gib = 7\n";
 
     struct Fixture(PathBuf);
@@ -217,7 +217,7 @@ mod zsh {
         let cargo = fixture.0.join("cargo");
         fs::write(
             &cargo,
-            "#!/bin/sh\nprintf '%s\\0' \"$@\"\nprintf '%s\\0' \"$PWD\" \"$CLEANER_TEST_VALUE\"\nprintf 'cargo diagnostic' >&2\nexit \"$CLEANER_FORWARD_EXIT\"\n",
+            "#!/bin/sh\nif [ \"$2\" = metadata ]; then printf '%s' \"$CLEANER_METADATA\"; exit 0; fi\nprintf '%s\\0' \"$@\"\nprintf '%s\\0' \"$PWD\" \"$CLEANER_TEST_VALUE\"\nprintf 'cargo diagnostic' >&2\nexit \"$CLEANER_FORWARD_EXIT\"\n",
         )
         .expect("write fake cargo");
         fs::set_permissions(&cargo, fs::Permissions::from_mode(EXECUTABLE_MODE))
@@ -249,6 +249,10 @@ mod zsh {
             .env("PATH", std::env::join_paths(paths).expect("join PATH"))
             .env("HOME", &fixture.0)
             .env_remove("ZDOTDIR")
+            .env("CLEANER_METADATA", serde_json::json!({
+                "workspace_root": fixture.0,
+                "target_directory": fixture.0.join("target"),
+            }).to_string())
             .env("CLEANER_FORWARD_EXIT", FORWARDED_EXIT_CODE.to_string())
             .env("CLEANER_TEST_VALUE", "inherited value")
             .output()
