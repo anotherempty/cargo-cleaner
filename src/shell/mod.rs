@@ -1,9 +1,11 @@
 mod bash;
+mod cmd;
 mod config;
 mod zsh;
 
 use crate::error::Error;
 pub use bash::Bash;
+pub use cmd::Cmd;
 pub use zsh::Zsh;
 
 /// Shell-specific integration lifecycle. Successful operations return a user-facing message.

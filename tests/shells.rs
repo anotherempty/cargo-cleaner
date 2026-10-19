@@ -52,6 +52,7 @@ mod tests {
                 .current_dir(self.directory.path())
                 .env("HOME", self.directory.path())
                 .env_remove("ZDOTDIR")
+                .env("CLINK_PROFILE", self.directory.path().join("clink"))
                 .env("PATH", std::env::join_paths(paths)?);
             Ok(command)
         }
@@ -87,6 +88,12 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    #[test]
+    fn cmd_setup_and_removal() {
+        let fixture = Fixture::new().unwrap();
+        fixture.lifecycle("cmd", "clink/cargo-cleaner.lua").unwrap();
     }
 
     #[test]

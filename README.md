@@ -27,6 +27,11 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Cmd: use `cargo-cleaner init cmd` with Clink 1.6.11+. Setup writes
+`cargo-cleaner.lua` under `CLINK_PROFILE` or `%LOCALAPPDATA%/clink`.
+On Windows, set `HOME` to your user directory for cleanup configuration.
+The Cmd alias applies to interactive commands, not batch scripts.
+
 Bash setup writes to `~/.bashrc`; login shells must source it from their profile.
 Open a new shell session and use Cargo normally. Zsh setup adds a function to
 `~/.zshrc` (or `$ZDOTDIR/.zshrc`) and creates the default global config if missing.

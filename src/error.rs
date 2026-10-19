@@ -56,6 +56,8 @@ pub enum Error {
     MissingHome,
     #[error("cannot locate .zshrc: neither ZDOTDIR nor HOME is set")]
     MissingShellDirectory,
+    #[error("cannot locate Clink profile: set CLINK_PROFILE or LOCALAPPDATA")]
+    MissingClinkDirectory,
     #[cfg(not(unix))]
     #[error("cargo exited without an exit code")]
     MissingExitCode,

@@ -24,6 +24,12 @@ impl ShellConfig {
             }
             _ => return Ok(()),
         };
+        if matches!(action, Action::Install)
+            && let Some(parent) = path.parent()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| Error::file(FileOperation::Create, parent, error))?;
+        }
         std::fs::write(path, contents)
             .map_err(|error| Error::file(FileOperation::Write, path, error))?;
         Ok(())

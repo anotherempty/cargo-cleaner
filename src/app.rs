@@ -85,6 +85,7 @@ enum CliCommand {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum ShellKind {
+    Cmd,
     Bash,
     Zsh,
 }
@@ -92,6 +93,7 @@ enum ShellKind {
 impl ShellKind {
     fn integration(&self) -> &dyn crate::shell::Shell {
         match self {
+            Self::Cmd => &crate::shell::Cmd,
             Self::Bash => &crate::shell::Bash,
             Self::Zsh => &crate::shell::Zsh,
         }
