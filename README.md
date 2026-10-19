@@ -1,219 +1,118 @@
 # cargo-cleaner
 
-A Cargo command wrapper with automatic cleanup across known projects. Before build-related
-commands, it runs `cargo clean` when configured size or free-space thresholds are
-crossed, then forwards the original command.
+A Cargo wrapper that automatically frees disk space before build commands. It runs
+`cargo clean` when configured limits are crossed, then forwards your command to Cargo.
 
-## Install
+## Setup
 
-Once a release is published, download a prebuilt archive from
-[GitHub Releases](https://github.com/anotherempty/cargo-cleaner/releases), or install
-the latest release with:
+Requires Cargo and zsh. Install a prebuilt binary for Linux or macOS (x86_64 or
+ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
+
+```sh
+cargo binstall --git https://github.com/anotherempty/cargo-cleaner cargo-cleaner
+```
+
+This uses binaries from GitHub Releases without requiring a crates.io package.
+
+Or use the shell installer:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-cleaner/releases/latest/download/cargo-cleaner-installer.sh | sh
 ```
 
-Distributions cover Linux and macOS on x86_64 and ARM64. The installer places the
-binary in `$CARGO_HOME/bin`, or `~/.cargo/bin` when `CARGO_HOME` is unset.
-Cargo and zsh are still required to use the wrapper and its shell integration.
-
-To build and install from a local checkout:
-
-```sh
-cargo install --path .
-```
-
-Ensure Cargo's binary directory (normally `~/.cargo/bin`) is on your `PATH`.
-Run setup:
+Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 
 ```sh
 cargo-cleaner init zsh
 ```
 
-Setup writes the Cargo shell function to `~/.zshrc` (or `$ZDOTDIR/.zshrc` when
-set), preserving existing configuration. Repeated setup does not duplicate the
-function.
-Open a new zsh session to activate it. Continue using
-normal commands such as `cargo build`, `cargo test`, and `cargo +stable check`.
+Open a new zsh session and use Cargo normally. Setup adds a function to
+`~/.zshrc` (or `$ZDOTDIR/.zshrc`) and creates the default global config if missing.
+Remove any existing `cargo` alias first; an existing `cargo` function is replaced.
+IDEs and processes invoking Cargo directly are unaffected.
 
-Setup also creates `~/.cargo-cleaner.toml` with a `free_space` object (`min_free_space_gib = 100`, `across_projects = true`) if
-missing. Existing files, including empty files, are preserved. `HOME` must be set;
-`ZDOTDIR` affects only shell integration, not the global cleanup config.
+To remove shell integration, run `cargo-cleaner uninstall zsh` and open a new
+shell. The binary and cleanup configs remain installed.
 
-## Global configuration and project overrides
+## Configuration
 
-Set top-level `verbose = true` to show cleanup progress, target measurements,
-selection decisions, and timings on stderr. It defaults to `false`. The nearest
-project configuration can override the global value with `verbose = true` or
-`verbose = false`; omitting it inherits the global value. Place this setting
-before any `[free_space]` table. Cleanup announcements and errors remain visible
-regardless of verbosity.
-
-Set the global free-space policy in `~/.cargo-cleaner.toml`:
+Global settings live in `~/.cargo-cleaner.toml`. Setup creates only the
+`[free_space]` settings shown below; the other settings are optional:
 
 ```toml
+verbose = false
+max_target_size_gib = 20
+
 [free_space]
 min_free_space_gib = 100
 across_projects = true
 ```
 
-Both fields are required. Set `across_projects = true` to register projects and clean the
-largest known target. Set `across_projects = false` to clean only the current project without
-reading or updating the registry.
+1. `max_target_size_gib`: clean the current target when its size exceeds this limit.
+2. `free_space.min_free_space_gib`: clean when free space on the workspace's
+   filesystem falls below this minimum.
+3. `free_space.across_projects`: clean the largest known target when `true`, or
+   only the current project's target when `false`. Both free-space fields are required.
+4. `verbose`: show cleanup progress and timings on stderr; defaults to `false`.
 
-The `free_space` object is global-only. Project files cannot override or disable it;
-putting this object in a project file is an error. The global configuration is always
-read and validated, even when a project has its own configuration. Omitting this
-object from the global file disables the free-space policy and registry operations.
-The 100 GiB default is written only during setup.
+Thresholds are positive integer GiB. Omit `[free_space]` to disable free-space
+cleanup and project registration. Existing config files are preserved during setup.
 
-Set a local target-size limit in your project's `.cargo-cleaner.toml`:
+For a project-specific size limit, add `.cargo-cleaner.toml` at the project root:
 
 ```toml
-max_target_size_gib = 20
+max_target_size_gib = 10
+verbose = true
 ```
 
-The global file can also provide `max_target_size_gib` as a default. The nearest
-project file replaces only that size policy. An empty project file disables the
-local size policy while leaving the global free-space policy active. The size limit and free-space object
-can both be present in the global file and operate independently.
+The nearest project config replaces the global size limit; an empty file disables
+size-based cleanup. `verbose` inherits the global setting when omitted.
+`[free_space]` is global-only and cannot be set or disabled by a project config.
 
-Thresholds are positive integers in GiB (1,073,741,824 bytes):
+## How it works
 
-- `free_space.min_free_space_gib`: clean when available space on the current
-  workspace's filesystem is **less than** this minimum. `across_projects` controls which
-  project is selected.
-- `max_target_size_gib`: clean the current target when its total file size is
-  **greater than** this limit.
+1. Before `build`, `check`, `test`, `run`, `bench`, `doc`, `clippy`, `rustc`, or
+   `rustdoc`, the wrapper asks Cargo for the workspace and target directory.
+   Standard single-letter aliases are supported; other commands pass through.
+2. With cross-project cleanup enabled, existing targets are recorded in
+   `~/.cargo-cleaner/projects.toml`. Projects are discovered as you use the wrapper,
+   without scanning your disk.
+3. The free-space policy runs first, then the target-size policy. Each cleans at
+   most one target. Cleanup removes **all Cargo artifacts in the selected target**,
+   including other profiles or projects sharing it. Source files remain intact.
+4. The original command runs with its arguments and exit status preserved.
+   Configuration, measurement, registry, or cleanup errors stop the command.
 
-The global free-space policy runs first, including registration of the current
-project when `across_projects = true`, followed by the size policy. If different projects exceed the two
-conditions, each policy can clean its selected target. If the free-space cleanup
-removes the current target, the size check sees it as empty.
-
-The nearest project `.cargo-cleaner.toml` is found by searching upward from the
-current directory, or the manifest directory when `--manifest-path` is supplied.
-Search stops at the home directory when reached. A nearer project file replaces
-the parent's size policy. Put the file at the workspace root to share the size
-limit across its members. Unknown keys, invalid values, measurement errors, and
-failed cleanup stop the requested command with a diagnostic.
-
-Checks run for `build`, `check`, `test`, `run`, `bench`, `doc`, `clippy`, `rustc`,
-and `rustdoc`, including the standard single-letter aliases. Explicit `clean`,
-help, `fmt`, `install`, and custom Cargo aliases/subcommands pass through unchanged.
-Invocations using the unstable `-C` directory switch also pass through without
-cleanup. Arguments after `--` belong to the requested program and are not inspected.
-
-Cargo metadata determines the workspace and configured target directory. An
-explicit `--target-dir` overrides that target. Cargo environment settings,
-`+toolchain`, `--config`, and manifest selection are respected. Free-space checks
-use the workspace's filesystem, even if the target directory is on another disk.
-Size checks sum regular file lengths, not allocated disk blocks, and do not follow
-nested symlinks. Missing artifact directories count as empty.
-
-Cleanup removes the **whole selected target directory's Cargo artifacts**, even
-when building only one package or profile. Shared target directories can contain
-other projects' artifacts. Source files remain intact, but the next build must
-rebuild artifacts. Each policy cleans at most once; this does not guarantee enough space for the
-next build and does not coordinate a separate clean/build transaction with other
-Cargo processes. Cargo's own locking still applies.
-
-## Project registry
-
-When the global free-space policy has `across_projects = true`, it identifies the current
-workspace and target directory before each supported build command. If the target
-directory exists, the policy registers the project in `~/.cargo-cleaner/projects.toml` before cleanup is evaluated.
-`HOME` must be set. Projects are discovered through wrapper invocations; there is
-no filesystem-wide scan. A first build without a target directory is registered
-on a later invocation after the target exists.
-
-Registration runs even when free space is sufficient or an empty project config
-disables the local size policy. When `free_space` is absent or `across_projects = false`, the registry
-is neither read nor updated. Canonical target paths are deduplicated,
-including targets shared by multiple workspaces. Missing target directories and
-workspaces without a `Cargo.toml` are removed from the registry. Updates use a file
-lock and atomic replacement to preserve registrations from concurrent commands.
-
-When the free-space threshold is crossed, existing registered targets are measured
-and the largest is cleaned once. Equal sizes use registry order. Selection spans
-all recorded targets, including other filesystems; cleaning a different disk may
-not improve free space on the current workspace's filesystem. The size-limit policy
-continues to clean only the current project's target directory.
-
-Cleaning another project runs `cargo clean` in its workspace with its manifest and
-recorded target directory. The current invocation's `+toolchain`, `--config`, and
-manifest flags are not applied to another project. Registry read/write errors,
-invalid registry data, and failed cleanup stop the requested command.
-
-## Forwarding and disabling
-
-The wrapper forwards every original argument to the real Cargo executable on
-`PATH`. It preserves the working directory, environment, standard streams, and
-exit status of that command. On Unix it replaces the wrapper process with Cargo
-after the cleanup check, preserving signals during the requested command.
-
-This affects shells that load the function. IDEs and other processes invoking
-Cargo directly do not use it. Existing `cargo` shell functions are replaced;
-remove any `cargo` alias before enabling this integration.
-
-To remove shell integration, run:
-
-```sh
-cargo-cleaner uninstall zsh
-```
-
-This removes the generated function from `.zshrc`,
-using the same `ZDOTDIR`/`HOME` selection as setup. Other configuration stays intact;
-repeated removal is safe. The binary and global and project cleanup configurations remain installed.
-Open a new shell, or use `unfunction cargo` to disable it in the current zsh session. To disable only
-size-based cleanup for a project, leave its `.cargo-cleaner.toml` empty. The global
-free-space policy continues to apply.
+Cleanup does not guarantee enough space for the next build. Cross-project cleanup
+can select a target on another filesystem, which may not free space where needed.
 
 ## Development
 
+Install Rust and zsh, then run:
+
 ```sh
 cargo test --all-targets --all-features
-cargo fmt --all -- --check
+cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Shell integration tests require zsh. Cleanup tests use isolated temporary projects;
-one test invokes real Cargo to verify workspace target discovery, cleanup, and
-rebuilding together.
+Tests use temporary projects; shell integration tests require zsh.
 
-## Distributions and releases
-
-Release packaging uses [cargo-dist](https://axodotdev.github.io/cargo-dist/), pinned
-to version `0.33.0` in `dist-workspace.toml`. Install that version locally:
+Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
+`dist-workspace.toml`:
 
 ```sh
 cargo install cargo-dist --version 0.33.0 --locked
-```
-
-After changing distribution settings, regenerate the workflow and check the plan:
-
-```sh
-dist generate
 dist generate --check
 dist plan
+dist build --artifacts=local
 ```
 
-Build archives for your current platform with `dist build --artifacts=local`.
-Artifacts are written to `target/distrib/`.
-
-To publish a release:
-
-1. Update the package version in `Cargo.toml` and refresh `Cargo.lock` with Cargo.
-2. Run the development checks above and `dist plan`.
-3. Commit and push the release changes, including the generated workflow.
-4. Create and push the matching version tag, for example `git tag v0.1.0` followed
-   by `git push origin v0.1.0` for the current version.
-
-The generated GitHub Actions workflow checks release plans on pull requests.
-Version tags build the platform archives, shell installer, and SHA-256 checksums,
-then publish them to GitHub Releases. Tags with a prerelease suffix produce a
-GitHub prerelease. This workflow does not publish to crates.io.
+Run `dist generate` after changing distribution settings. Local artifacts go to
+`target/distrib/`. To release, update `Cargo.toml` and `Cargo.lock`, run the checks,
+commit and push, then push a matching version tag such as `v0.1.0`.
+GitHub Actions publishes archives, a shell installer, and checksums to GitHub
+Releases. Pull requests check the release plan; crates.io publishing is separate.
 
 ## License
 
