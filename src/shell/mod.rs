@@ -5,6 +5,7 @@ mod elvish;
 mod fish;
 mod ion;
 mod nu;
+mod powershell;
 mod zsh;
 
 use crate::error::Error;
@@ -14,6 +15,7 @@ pub use elvish::Elvish;
 pub use fish::Fish;
 pub use ion::Ion;
 pub use nu::Nu;
+pub use powershell::PowerShell;
 pub use zsh::Zsh;
 
 /// Shell-specific integration lifecycle. Successful operations return a user-facing message.

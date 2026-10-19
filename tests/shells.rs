@@ -92,6 +92,32 @@ mod tests {
     }
 
     #[test]
+    fn powershell_setup_removal_and_forwarding() {
+        let fixture = Fixture::new().unwrap();
+        fixture
+            .lifecycle("powershell", ".config/powershell/profile.ps1")
+            .unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "powershell"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let output = fixture.command("pwsh").unwrap()
+            .args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                ". $PROFILE.CurrentUserAllHosts; cargo '+stable' 'custom' '' 'with spaces' '*;$HOME'; exit $LASTEXITCODE"])
+            .output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[test]
     fn nu_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture
