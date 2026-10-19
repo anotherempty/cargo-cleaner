@@ -214,3 +214,8 @@ The generated GitHub Actions workflow checks release plans on pull requests.
 Version tags build the platform archives, shell installer, and SHA-256 checksums,
 then publish them to GitHub Releases. Tags with a prerelease suffix produce a
 GitHub prerelease. This workflow does not publish to crates.io.
+
+## License
+
+Licensed under either the [MIT license](LICENSE-MIT) or the
+[Apache License, Version 2.0](LICENSE-APACHE), at your option.
