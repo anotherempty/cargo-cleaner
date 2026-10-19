@@ -92,6 +92,40 @@ mod tests {
     }
 
     #[test]
+    fn tcsh_setup_removal_and_forwarding() {
+        let fixture = Fixture::new().unwrap();
+        fixture.lifecycle("tcsh", ".tcshrc").unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "tcsh"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let script = fixture.directory.path().join("check.csh");
+        fs::write(
+            &script,
+            "source \"$HOME/.tcshrc\"\ncargo '+stable' 'custom' '' 'with spaces' '*;$HOME'\n",
+        )
+        .unwrap();
+        let output = fixture
+            .command("tcsh")
+            .unwrap()
+            .arg("-f")
+            .arg(script)
+            .args(["+stable", "custom", "", "with spaces", "*;$HOME"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[test]
     fn powershell_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture

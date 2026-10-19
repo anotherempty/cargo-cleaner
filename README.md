@@ -27,6 +27,8 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Tcsh: `cargo-cleaner init tcsh` adds an alias to `~/.tcshrc`.
+
 PowerShell 7.3+: `cargo-cleaner init powershell` uses `pwsh` to locate and
 update `$PROFILE.CurrentUserAllHosts`.
 

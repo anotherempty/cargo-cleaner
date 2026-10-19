@@ -85,6 +85,7 @@ enum CliCommand {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum ShellKind {
+    Tcsh,
     #[value(name = "powershell", alias = "pwsh")]
     PowerShell,
     Nu,
@@ -105,6 +106,7 @@ impl ShellKind {
             Self::Ion => &crate::shell::Ion,
             Self::Nu => &crate::shell::Nu,
             Self::PowerShell => &crate::shell::PowerShell,
+            Self::Tcsh => &crate::shell::Tcsh,
             Self::Bash => &crate::shell::Bash,
             Self::Zsh => &crate::shell::Zsh,
         }
