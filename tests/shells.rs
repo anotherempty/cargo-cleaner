@@ -213,9 +213,26 @@ mod tests {
     }
 
     #[test]
-    fn ion_setup_and_removal() {
+    fn ion_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("ion", ".config/ion/initrc").unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "ion"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let output = fixture.command("ion").unwrap()
+            .args(["-c", "source $HOME/.config/ion/initrc\ncargo '+stable' 'custom' '' 'with spaces' '*;$HOME'"])
+            .output().unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert_eq!(output.stderr, b"diagnostic");
     }
 
     #[test]

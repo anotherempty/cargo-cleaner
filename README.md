@@ -107,7 +107,7 @@ can select a target on another filesystem, which may not free space where needed
 
 ## Development
 
-Install Rust and the shells exercised by the tests (Bash, Elvish, Fish, Nushell,
+Install Rust and the shells exercised by the tests (Bash, Elvish, Fish, Ion, Nushell,
 PowerShell, Tcsh, Xonsh, and Zsh), then run:
 
 ```sh
@@ -116,8 +116,8 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Tests use temporary projects and isolated shell configuration files. Cmd/Clink and
-Ion setup/removal are tested; their runtime behavior also needs native validation.
+Tests use temporary projects and isolated shell configuration files. Cmd/Clink
+setup/removal is tested; its runtime behavior also needs Windows validation.
 
 Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
 `dist-workspace.toml`:
