@@ -156,6 +156,49 @@ mod tests {
     }
 
     #[test]
+    fn tcsh_preserves_existing_startup_configuration() {
+        for has_tcshrc in [false, true] {
+            let fixture = Fixture::new().unwrap();
+            let home = fixture.directory.path();
+            let cshrc = "setenv CLEANER_STARTUP_SOURCE cshrc\n";
+            let tcshrc = "setenv CLEANER_STARTUP_SOURCE tcshrc\n";
+            fs::write(home.join(".cshrc"), cshrc).unwrap();
+            if has_tcshrc {
+                fs::write(home.join(".tcshrc"), tcshrc).unwrap();
+            }
+            for action in ["init", "init", "uninstall", "uninstall"] {
+                let output = fixture
+                    .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                    .unwrap()
+                    .args([action, "tcsh"])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{output:?}");
+                let output = fixture
+                    .command("tcsh")
+                    .unwrap()
+                    .args(["-c", "echo $CLEANER_STARTUP_SOURCE; alias cargo"])
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{output:?}");
+                let source = if has_tcshrc { "tcshrc" } else { "cshrc" };
+                let expected = if action == "init" {
+                    format!("{source}\ncargo-cleaner exec --\n")
+                } else {
+                    format!("{source}\n")
+                };
+                assert_eq!(output.stdout, expected.as_bytes());
+                assert!(output.stderr.is_empty(), "{output:?}");
+                assert_eq!(home.join(".tcshrc").exists(), has_tcshrc);
+            }
+            assert_eq!(fs::read_to_string(home.join(".cshrc")).unwrap(), cshrc);
+            if has_tcshrc {
+                assert_eq!(fs::read_to_string(home.join(".tcshrc")).unwrap(), tcshrc);
+            }
+        }
+    }
+
+    #[test]
     fn powershell_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture

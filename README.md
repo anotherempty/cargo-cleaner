@@ -37,7 +37,7 @@ Replace `zsh` with your shell below, then open a new session:
 | Ion | `ion` | `<config>/ion/initrc` |
 | Nushell | `nu` | `<config>/nushell/config.nu` |
 | PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts` and adjacent `cargo-cleaner.ps1`, located using `pwsh` |
-| Tcsh | `tcsh` | `~/.tcshrc` |
+| Tcsh | `tcsh` | `~/.tcshrc`, or existing `~/.cshrc` if `.tcshrc` is absent |
 | Xonsh | `xonsh` | `~/.xonshrc` |
 | Zsh | `zsh` | `$ZDOTDIR/.zshrc`, otherwise `~/.zshrc` |
 
