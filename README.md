@@ -27,6 +27,10 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Nushell: `cargo-cleaner init nu` updates `nushell/config.nu` under
+`XDG_CONFIG_HOME`, or the platform config directory (on macOS,
+`~/Library/Application Support`; on Windows, `%APPDATA%`).
+
 Ion: `cargo-cleaner init ion` updates `$XDG_CONFIG_HOME/ion/initrc`
 (default `~/.config/ion/initrc`).
 

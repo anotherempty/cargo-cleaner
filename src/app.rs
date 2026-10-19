@@ -85,6 +85,7 @@ enum CliCommand {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum ShellKind {
+    Nu,
     Ion,
     Fish,
     Elvish,
@@ -100,6 +101,7 @@ impl ShellKind {
             Self::Elvish => &crate::shell::Elvish,
             Self::Fish => &crate::shell::Fish,
             Self::Ion => &crate::shell::Ion,
+            Self::Nu => &crate::shell::Nu,
             Self::Bash => &crate::shell::Bash,
             Self::Zsh => &crate::shell::Zsh,
         }

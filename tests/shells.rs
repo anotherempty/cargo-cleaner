@@ -92,6 +92,37 @@ mod tests {
     }
 
     #[test]
+    fn nu_setup_removal_and_forwarding() {
+        let fixture = Fixture::new().unwrap();
+        fixture
+            .lifecycle("nu", ".config/nushell/config.nu")
+            .unwrap();
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "nu"])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let script = fixture.directory.path().join("check.nu");
+        fs::write(&script, "source .config/nushell/config.nu\ncargo '+stable' 'custom' '' 'with spaces' '*;$HOME'\nexit $env.LAST_EXIT_CODE\n").unwrap();
+        let output = fixture
+            .command("nu")
+            .unwrap()
+            .args(["--no-config-file"])
+            .arg(script)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[test]
     fn ion_setup_and_removal() {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("ion", ".config/ion/initrc").unwrap();

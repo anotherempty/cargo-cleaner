@@ -4,6 +4,7 @@ mod config;
 mod elvish;
 mod fish;
 mod ion;
+mod nu;
 mod zsh;
 
 use crate::error::Error;
@@ -12,6 +13,7 @@ pub use cmd::Cmd;
 pub use elvish::Elvish;
 pub use fish::Fish;
 pub use ion::Ion;
+pub use nu::Nu;
 pub use zsh::Zsh;
 
 /// Shell-specific integration lifecycle. Successful operations return a user-facing message.
