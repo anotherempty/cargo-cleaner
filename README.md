@@ -5,7 +5,7 @@ A Cargo wrapper that automatically frees disk space before build commands. It ru
 
 ## Setup
 
-Requires Cargo and zsh. Install a prebuilt binary for Linux or macOS (x86_64 or
+Requires Cargo and a supported shell. Install a prebuilt binary for Linux or macOS (x86_64 or
 ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
@@ -26,13 +26,32 @@ Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 cargo-cleaner init zsh
 ```
 
-Open a new zsh session and use Cargo normally. Setup adds a function to
-`~/.zshrc` (or `$ZDOTDIR/.zshrc`) and creates the default global config if missing.
-Remove any existing `cargo` alias first; an existing `cargo` function is replaced.
-IDEs and processes invoking Cargo directly are unaffected.
+Replace `zsh` with your shell below, then open a new session:
 
-To remove shell integration, run `cargo-cleaner uninstall zsh` and open a new
-shell. The binary and cleanup configs remain installed.
+| Shell | Argument | Integration file |
+| --- | --- | --- |
+| Bash | `bash` | `~/.bashrc` |
+| Cmd + Clink 1.6.11+ | `cmd` | `%CLINK_PROFILE%/cargo-cleaner.lua`, otherwise `%LOCALAPPDATA%/clink/cargo-cleaner.lua` |
+| Elvish 0.21+ | `elvish` | `<config>/elvish/rc.elv` |
+| Fish | `fish` | `<config>/fish/conf.d/cargo-cleaner.fish` |
+| Ion | `ion` | `<config>/ion/initrc` |
+| Nushell | `nu` | `<config>/nushell/config.nu` |
+| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts` and adjacent `cargo-cleaner.ps1`, located using `pwsh` |
+| Tcsh | `tcsh` | `~/.tcshrc`, or existing `~/.cshrc` if `.tcshrc` is absent |
+| Xonsh | `xonsh` | `~/.xonshrc` |
+| Zsh | `zsh` | `$ZDOTDIR/.zshrc`, otherwise `~/.zshrc` |
+
+`<config>` uses `XDG_CONFIG_HOME` when set, otherwise `~/.config` on Unix or
+`%APPDATA%` on Windows. Nushell defaults to `~/Library/Application Support` on macOS.
+Bash login profiles must source `.bashrc`. Cmd integration applies to interactive
+commands, not batch scripts. On Windows, build from source and set `HOME` to your
+user directory; prebuilt Windows distributions are not yet provided.
+
+Setup preserves other config content and creates the default global cleanup config
+if missing. Existing `cargo` functions or aliases may be replaced; remove conflicting
+aliases in Bash, Zsh, or PowerShell first. IDEs invoking Cargo directly are unaffected.
+To remove integration, run `cargo-cleaner uninstall <shell>` and open a new session.
+The binary and cleanup configs remain installed.
 
 ## Configuration
 
@@ -88,7 +107,8 @@ can select a target on another filesystem, which may not free space where needed
 
 ## Development
 
-Install Rust and zsh, then run:
+Install Rust and the shells exercised by the tests (Bash, Elvish, Fish, Ion, Nushell,
+PowerShell, Tcsh, Xonsh, and Zsh), then run:
 
 ```sh
 cargo test --all-targets --all-features
@@ -96,7 +116,8 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Tests use temporary projects; shell integration tests require zsh.
+Tests use temporary projects and isolated shell configuration files. Cmd/Clink
+setup/removal is tested; its runtime behavior also needs Windows validation.
 
 Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
 `dist-workspace.toml`:

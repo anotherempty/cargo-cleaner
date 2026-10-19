@@ -56,6 +56,19 @@ pub enum Error {
     MissingHome,
     #[error("cannot locate .zshrc: neither ZDOTDIR nor HOME is set")]
     MissingShellDirectory,
+    #[error("cannot locate Clink profile: set CLINK_PROFILE or LOCALAPPDATA")]
+    MissingClinkDirectory,
+    #[error("failed to locate PowerShell profile using pwsh: {0}")]
+    PowerShellProfile(#[source] io::Error),
+    #[error(
+        "PowerShell profile lookup failed ({status}): {}",
+        String::from_utf8_lossy(stderr)
+    )]
+    PowerShellProfileFailed { status: ExitStatus, stderr: Vec<u8> },
+    #[error("PowerShell profile path is not UTF-8: {0}")]
+    ProfileEncoding(#[source] std::string::FromUtf8Error),
+    #[error("PowerShell returned an empty profile path")]
+    EmptyPowerShellProfile,
     #[cfg(not(unix))]
     #[error("cargo exited without an exit code")]
     MissingExitCode,

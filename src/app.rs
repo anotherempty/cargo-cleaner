@@ -85,12 +85,31 @@ enum CliCommand {
 
 #[derive(Clone, Copy, ValueEnum)]
 enum ShellKind {
+    Xonsh,
+    Tcsh,
+    #[value(name = "powershell", alias = "pwsh")]
+    PowerShell,
+    Nu,
+    Ion,
+    Fish,
+    Elvish,
+    Cmd,
+    Bash,
     Zsh,
 }
 
 impl ShellKind {
     fn integration(&self) -> &dyn crate::shell::Shell {
         match self {
+            Self::Cmd => &crate::shell::Cmd,
+            Self::Elvish => &crate::shell::Elvish,
+            Self::Fish => &crate::shell::Fish,
+            Self::Ion => &crate::shell::Ion,
+            Self::Nu => &crate::shell::Nu,
+            Self::PowerShell => &crate::shell::PowerShell,
+            Self::Tcsh => &crate::shell::Tcsh,
+            Self::Xonsh => &crate::shell::Xonsh,
+            Self::Bash => &crate::shell::Bash,
             Self::Zsh => &crate::shell::Zsh,
         }
     }

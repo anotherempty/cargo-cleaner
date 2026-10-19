@@ -5,12 +5,12 @@ const USAGE_ERROR_EXIT_CODE: i32 = 2;
 #[test]
 fn rejects_unsupported_shell_without_printing_shell_code() {
     let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
-        .args(["init", "fish"])
+        .args(["init", "unsupported"])
         .output()
         .expect("run cleaner");
     assert!(!output.status.success());
     assert!(output.stdout.is_empty());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid value 'fish'"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("invalid value 'unsupported'"));
 }
 
 #[test]
@@ -34,7 +34,7 @@ fn clap_handles_help_version_and_invalid_commands() {
     for args in [
         vec!["unknown"],
         vec!["init"],
-        vec!["uninstall", "fish"],
+        vec!["uninstall", "unsupported"],
         vec!["exec", "build"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
