@@ -27,6 +27,8 @@ cargo-cleaner init zsh
 ```
 
 Use `cargo-cleaner init bash` for Bash or `cargo-cleaner init zsh` for Zsh.
+Xonsh: `cargo-cleaner init xonsh` adds an alias to `~/.xonshrc`.
+
 Tcsh: `cargo-cleaner init tcsh` adds an alias to `~/.tcshrc`.
 
 PowerShell 7.3+: `cargo-cleaner init powershell` uses `pwsh` to locate and

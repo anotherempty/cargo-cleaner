@@ -7,6 +7,7 @@ mod ion;
 mod nu;
 mod powershell;
 mod tcsh;
+mod xonsh;
 mod zsh;
 
 use crate::error::Error;
@@ -18,6 +19,7 @@ pub use ion::Ion;
 pub use nu::Nu;
 pub use powershell::PowerShell;
 pub use tcsh::Tcsh;
+pub use xonsh::Xonsh;
 pub use zsh::Zsh;
 
 /// Shell-specific integration lifecycle. Successful operations return a user-facing message.
