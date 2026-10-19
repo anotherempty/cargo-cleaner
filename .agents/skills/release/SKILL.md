@@ -13,16 +13,19 @@ Use their current values rather than hardcoding a tool version, repository, or p
 ## Scope and version
 
 1. A request to make or publish a release authorizes the necessary release commit,
-   branch push, and version-tag push. A request only to prepare or validate a release
+   branch push, version-tag push, and cleanup of a failed unpublished attempt as
+   described below. A request only to prepare or validate a release
    stops before publishing. Creating or editing this skill does not authorize a release.
 2. Inspect the working tree, branch, remotes, and local and remote tags. Preserve
    unrelated work. Default to releasing `main`; do not silently release a feature branch.
    Fetch the intended remote and reconcile its state before preparing the release.
 3. Use the requested version. If none is supplied and the package's current version
-   has no release tag, use that version. If it is already tagged, ask which next
-   version to release rather than choosing a version bump for the user.
+   has no release tag, use that version. If its tag belongs to a failed unpublished
+   attempt, clean up that attempt and reuse the version. If the version was already
+   released, ask which next version to release rather than choosing a bump.
 4. Use `v<package-version>` as the tag. Check both remote tags and GitHub Releases
-   for that version before creating anything. Never replace or move a published tag.
+   for that version before creating anything. Preserve tags for published releases;
+   a pushed tag alone does not mean a release was published.
 
 ## Prepare and validate
 
@@ -63,10 +66,28 @@ Use their current values rather than hardcoding a tool version, repository, or p
 
 ## Failed or repeated releases
 
-Inspect existing tags, workflow runs, and release assets before retrying. If a tag
-already points to the intended commit, reuse its run rather than recreating the tag.
-A request to retry permits rerunning the failed workflow when appropriate, but not
-deleting a release or rewriting a tag. If a fix needs a different commit, explain
-the failure and obtain the user's version decision. Stop repeated failing attempts
-and report the concrete blocker; do not change credentials, repository protections,
-or publishing scope to bypass it.
+1. Inspect the failed jobs and record the cause, run URL, tag, tag object ID, and
+   commit. Do not treat an in-progress or inaccessible run as failed. A local
+   validation failure before tagging needs no remote cleanup.
+2. Before cleanup, wait for all runs and reruns associated with that tag to finish,
+   or cancel them and verify they have stopped. This prevents a remaining job from
+   publishing after cleanup. Retain workflow logs and artifacts for diagnosis.
+3. Check GitHub Releases again, including drafts. Clean up only an attempt known
+   to have failed before publication. Preserve any published release or prerelease
+   and its tag, even if a later workflow job failed. If publication state cannot be
+   verified, report the blocker rather than deleting anything.
+4. Remove any draft release created by this failed attempt, including its draft
+   assets. Delete the remote version tag only if its object ID still matches the
+   recorded attempt; use an explicit expected-value lease for the deletion. Remove
+   the local tag only if it also matches. Leave unrelated tags, releases, commits,
+   and working-tree changes intact. Verify that the draft and tags are gone. If a
+   tool or permission is unavailable, report exactly which cleanup remains.
+5. Fix the cause, rerun the affected validation, commit and push the fix, then
+   recreate the same version tag on the verified commit and monitor the new run.
+   A failed unpublished attempt does not require a version bump or additional
+   confirmation for this cleanup and retry. Never move a tag in place or force-push
+   a branch; remove the failed tag before creating its replacement.
+6. If the same failure recurs after a fix, clean up the failed unpublished attempt
+   and report the blocker instead of repeatedly publishing retries. Do not change
+   credentials, repository protections, or publishing scope to bypass a failure.
+   Report what was removed, what was retained, and whether a retry succeeded.
