@@ -63,6 +63,7 @@ mod tests {
             fs::create_dir_all(root.join("target"))?;
             fs::create_dir_all(root.join("member/src"))?;
             fs::write(root.join(".cargo-cleaner.toml"), config)?;
+            fs::write(root.join("Cargo.toml"), "[workspace]\n")?;
             let script = root.join("bin/cargo");
             fs::write(
                 &script,
@@ -308,7 +309,10 @@ esac
                 fixture.run(&["build"]).unwrap().status.code(),
                 Some(FORWARDED_EXIT_CODE)
             );
-            assert_eq!(fixture.calls().unwrap(), "build\n");
+            assert_eq!(
+                fixture.calls().unwrap(),
+                "metadata --no-deps --format-version=1\nbuild\n"
+            );
         }
     }
 
@@ -419,6 +423,7 @@ esac
         let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
             .args(["exec", "--", "build", "--offline"])
             .current_dir(fixture.root.join("member/src"))
+            .env("HOME", fixture.root.join("home"))
             .env_remove("CARGO_TARGET_DIR")
             .env_remove("CARGO_BUILD_TARGET_DIR")
             .output()
@@ -476,6 +481,288 @@ esac
                 .nth(FORWARD_AFTER_CLEAN_INDEX)
                 .unwrap()
                 .ends_with("-- --help --target-dir unrelated")
+        );
+    }
+    #[test]
+    fn low_disk_selects_largest_registered_project_and_preserves_forwarding() {
+        const SMALL_BYTES: u64 = 8;
+        const LARGE_BYTES: u64 = 32;
+        let large = Fixture::new("").unwrap();
+        large.artifact("target/artifact", LARGE_BYTES).unwrap();
+        assert_eq!(
+            large.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        let small = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        small.artifact("target/artifact", SMALL_BYTES).unwrap();
+        let output = small
+            .command(&["+stable", "build", "--config", "net.offline=true"])
+            .unwrap()
+            .env("HOME", large.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        let calls = small.calls().unwrap();
+        let clean = calls.lines().nth(CLEAN_CALL_INDEX).unwrap();
+        assert_eq!(
+            clean,
+            format!(
+                "clean --manifest-path {} --target-dir {}",
+                large.root.join("Cargo.toml").display(),
+                large.root.join("target").display()
+            )
+        );
+        assert_eq!(
+            calls.lines().last(),
+            Some("+stable build --config net.offline=true")
+        );
+        assert_eq!(calls.lines().count(), CLEAN_AND_FORWARD_CALLS);
+    }
+
+    #[test]
+    fn current_project_is_registered_before_largest_selection() {
+        const SMALL_BYTES: u64 = 8;
+        const LARGE_BYTES: u64 = 32;
+        let small = Fixture::new("").unwrap();
+        small.artifact("target/artifact", SMALL_BYTES).unwrap();
+        assert_eq!(
+            small.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        let large = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        large.artifact("target/artifact", LARGE_BYTES).unwrap();
+        let output = large
+            .command(&["build"])
+            .unwrap()
+            .env("HOME", small.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert_eq!(
+            large
+                .calls()
+                .unwrap()
+                .lines()
+                .nth(CLEAN_CALL_INDEX)
+                .unwrap(),
+            format!("clean --target-dir {}", large.root.join("target").display())
+        );
+    }
+
+    #[test]
+    fn size_policy_still_cleans_current_project_with_a_larger_registered_project() {
+        const LARGER_BYTES: u64 = OVERSIZED_ARTIFACT_BYTES * 2;
+        let large = Fixture::new("").unwrap();
+        large.artifact("target/artifact", LARGER_BYTES).unwrap();
+        assert_eq!(
+            large.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        let current = Fixture::new(TARGET_LIMIT_CONFIG).unwrap();
+        current
+            .artifact("target/artifact", OVERSIZED_ARTIFACT_BYTES)
+            .unwrap();
+        let output = current
+            .command(&["build"])
+            .unwrap()
+            .env("HOME", large.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert_eq!(
+            current
+                .calls()
+                .unwrap()
+                .lines()
+                .nth(CLEAN_CALL_INDEX)
+                .unwrap(),
+            format!(
+                "clean --target-dir {}",
+                current.root.join("target").display()
+            )
+        );
+    }
+
+    #[test]
+    fn registry_deduplicates_targets_and_prunes_removed_projects() {
+        const PROJECT_COUNT: usize = 1;
+        const REGISTRATION_ATTEMPTS: usize = 2;
+        let old = Fixture::new("").unwrap();
+        for _ in 0..REGISTRATION_ATTEMPTS {
+            assert_eq!(
+                old.run(&["build"]).unwrap().status.code(),
+                Some(FORWARDED_EXIT_CODE)
+            );
+        }
+        let path = old.root.join("home/.cargo-cleaner/projects.toml");
+        let registry: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            registry["projects"].as_array().unwrap().len(),
+            PROJECT_COUNT
+        );
+        fs::remove_dir_all(old.root.join("target")).unwrap();
+        let current = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let output = current
+            .command(&["build"])
+            .unwrap()
+            .env("HOME", old.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        let registry: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            registry["projects"].as_array().unwrap().len(),
+            PROJECT_COUNT
+        );
+        assert_eq!(
+            registry["projects"][0]["workspace"].as_str().unwrap(),
+            current.root.to_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn missing_targets_are_not_registered_or_cleaned() {
+        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        fs::remove_dir_all(fixture.root.join("target")).unwrap();
+        assert_eq!(
+            fixture.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        assert_eq!(
+            fixture.calls().unwrap().lines().count(),
+            METADATA_AND_FORWARD_CALLS
+        );
+        let registry: toml::Value = toml::from_str(
+            &fs::read_to_string(fixture.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+        )
+        .unwrap();
+        assert!(registry["projects"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn malformed_registry_is_not_overwritten_and_blocks_cleanup() {
+        let fixture = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        let directory = fixture.root.join("home/.cargo-cleaner");
+        fs::create_dir(&directory).unwrap();
+        let path = directory.join("projects.toml");
+        fs::write(&path, "invalid registry").unwrap();
+        let output = fixture.run(&["build"]).unwrap();
+        assert_eq!(output.status.code(), Some(WRAPPER_FAILURE_EXIT_CODE));
+        assert!(!fixture.calls().unwrap().contains("clean --"));
+        assert_eq!(fs::read_to_string(path).unwrap(), "invalid registry");
+    }
+
+    #[test]
+    fn real_cargo_cleans_largest_other_project_before_building_current_project() {
+        let old = Fixture::new("").unwrap();
+        let current = Fixture::new(LOW_DISK_CONFIG).unwrap();
+        for fixture in [&old, &current] {
+            fs::create_dir(fixture.root.join("src")).unwrap();
+            fs::write(fixture.root.join("src/main.rs"), "fn main() {}\n").unwrap();
+            fs::write(
+                fixture.root.join("Cargo.toml"),
+                "[package]\nname = \"registry-fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n",
+            )
+            .unwrap();
+        }
+        for fixture in [&old, &current] {
+            fs::remove_dir(fixture.root.join("target")).unwrap();
+            let output = Command::new(env!("CARGO"))
+                .args(["build", "--offline"])
+                .current_dir(&fixture.root)
+                .env_remove("CARGO_TARGET_DIR")
+                .env_remove("CARGO_BUILD_TARGET_DIR")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        old.artifact("target/large-marker", OVERSIZED_ARTIFACT_BYTES)
+            .unwrap();
+        fs::write(current.root.join("target/keep-marker"), "keep").unwrap();
+        for fixture in [&old, &current] {
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                .args(["exec", "--", "build", "--offline"])
+                .current_dir(&fixture.root)
+                .env("HOME", old.root.join("home"))
+                .env_remove("CARGO_TARGET_DIR")
+                .env_remove("CARGO_BUILD_TARGET_DIR")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        assert!(!old.root.join("target/large-marker").exists());
+        assert!(old.root.join("src/main.rs").is_file());
+        assert!(current.root.join("target/keep-marker").is_file());
+        assert!(current.root.join("target/debug/registry-fixture").is_file());
+    }
+    #[test]
+    fn concurrent_registration_keeps_both_projects() {
+        const PROJECT_COUNT: usize = 2;
+        let first = Fixture::new("").unwrap();
+        let second = Fixture::new("").unwrap();
+        let mut first_process = first
+            .command(&["build"])
+            .unwrap()
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut second_process = second
+            .command(&["build"])
+            .unwrap()
+            .env("HOME", first.root.join("home"))
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        assert_eq!(
+            first_process.wait().unwrap().code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        assert_eq!(
+            second_process.wait().unwrap().code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        let registry: toml::Value = toml::from_str(
+            &fs::read_to_string(first.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            registry["projects"].as_array().unwrap().len(),
+            PROJECT_COUNT
+        );
+    }
+
+    #[test]
+    fn shared_target_is_registered_once_across_projects() {
+        const PROJECT_COUNT: usize = 1;
+        let first = Fixture::new("").unwrap();
+        let second = Fixture::new("").unwrap();
+        assert_eq!(
+            first.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        let target = first.root.join("target");
+        let output = second
+            .command(&["build", "--target-dir", target.to_str().unwrap()])
+            .unwrap()
+            .env("HOME", first.root.join("home"))
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        let registry: toml::Value = toml::from_str(
+            &fs::read_to_string(first.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            registry["projects"].as_array().unwrap().len(),
+            PROJECT_COUNT
         );
     }
 }

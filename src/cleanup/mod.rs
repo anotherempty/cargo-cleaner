@@ -1,3 +1,5 @@
+mod registry;
+
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Write;
@@ -8,6 +10,7 @@ use std::process::Command;
 use serde::Deserialize;
 
 use crate::error::{CargoOperation, Error, FileOperation};
+use registry::{Project, Registry};
 
 pub struct Cleanup;
 
@@ -19,85 +22,58 @@ impl Cleanup {
         let cwd = std::env::current_dir().map_err(Error::CurrentDirectory)?;
         let manifest = invocation.manifest.as_ref().map(|path| cwd.join(path));
         let start = manifest.as_deref().and_then(Path::parent).unwrap_or(&cwd);
-        let Some(config) = Config::find(start)? else {
-            return Ok(());
-        };
-        if matches!(config.policy, Policy::Disabled) {
-            return Ok(());
-        }
+        let policy = Config::find(start)?.map_or(Policy::Disabled, |config| config.policy);
 
         let workspace = invocation.workspace()?;
         let target_override = invocation.target.as_ref().map(|path| cwd.join(path));
         let target = target_override
             .as_deref()
             .unwrap_or(&workspace.target_directory);
-        let reason = match config.policy {
-            Policy::Disabled => None,
+        let registry = Registry::register(&workspace.workspace_root, target)?;
+        match policy {
+            Policy::Disabled => {}
             Policy::MaxTarget(limit) => {
-                Self::directory_exceeds(target, limit)?.then_some("target size threshold exceeded")
+                if Self::directory_exceeds(target, limit)? {
+                    Self::clean(invocation.command(CargoOperation::Clean), target)?;
+                }
             }
             Policy::MinFree(limit) => {
                 let available =
                     fs2::available_space(&workspace.workspace_root).map_err(|source| {
                         Error::file(FileOperation::FreeSpace, &workspace.workspace_root, source)
                     })?;
-                (available < limit.get()).then_some("free disk space below minimum")
-            }
-        };
-        if let Some(reason) = reason {
-            tracing::info!("cargo-cleaner: running cargo clean ({reason})");
-            let status = invocation
-                .command(CargoOperation::Clean)
-                .arg("--target-dir")
-                .arg(target)
-                .status()
-                .map_err(|source| Error::Execute {
-                    operation: CargoOperation::Clean,
-                    source,
-                })?;
-            if !status.success() {
-                return Err(Error::CleanFailed(status));
+                if available < limit.get()
+                    && let Some(project) = registry.heaviest()?
+                {
+                    if project.is_current(&workspace.workspace_root, target)? {
+                        Self::clean(invocation.command(CargoOperation::Clean), project.target())?;
+                    } else {
+                        Self::clean(project.clean_command(), project.target())?;
+                    }
+                }
             }
         }
         Ok(())
     }
 
-    fn directory_exceeds(root: &Path, limit: ByteLimit) -> Result<bool, Error> {
-        let root = match root.canonicalize() {
-            Ok(root) => root,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-            Err(error) => return Err(Error::file(FileOperation::Resolve, root, error)),
-        };
-        let mut pending = vec![root];
-        let mut size = 0_u64;
-        while let Some(path) = pending.pop() {
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(metadata) => metadata,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(Error::file(FileOperation::Inspect, &path, error)),
-            };
-            if metadata.is_symlink() {
-                // Do not traverse symlinked trees outside the artifact directory.
-                continue;
-            }
-            if metadata.is_dir() {
-                for entry in fs::read_dir(&path)
-                    .map_err(|error| Error::file(FileOperation::Read, &path, error))?
-                {
-                    pending.push(
-                        entry
-                            .map_err(|error| Error::file(FileOperation::Read, &path, error))?
-                            .path(),
-                    );
-                }
-            } else if metadata.is_file() {
-                size = size.saturating_add(metadata.len());
-                if size > limit.get() {
-                    return Ok(true);
-                }
-            }
+    fn clean(mut command: Command, target: &Path) -> Result<(), Error> {
+        tracing::info!("cargo-cleaner: running cargo clean ({})", target.display());
+        let status = command
+            .arg("--target-dir")
+            .arg(target)
+            .status()
+            .map_err(|source| Error::Execute {
+                operation: CargoOperation::Clean,
+                source,
+            })?;
+        if !status.success() {
+            return Err(Error::CleanFailed(status));
         }
-        Ok(false)
+        Ok(())
+    }
+
+    fn directory_exceeds(root: &Path, limit: ByteLimit) -> Result<bool, Error> {
+        Ok(Project::target_size(root, Some(limit.get()))? > limit.get())
     }
 }
 

@@ -1,6 +1,6 @@
 # cargo-cleaner
 
-A Cargo command wrapper with per-project automatic cleanup. Before build-related
+A Cargo command wrapper with automatic cleanup across known projects. Before build-related
 commands, it runs `cargo clean` when configured size or free-space thresholds are
 crossed, then forwards the original command.
 
@@ -19,7 +19,7 @@ cargo-cleaner init zsh
 
 Setup writes the Cargo shell function to `~/.zshrc` (or `$ZDOTDIR/.zshrc` when
 set), preserving existing configuration. Repeated setup does not duplicate the
-function, and the previous `eval` initialization line is removed automatically.
+function.
 Open a new zsh session to activate it. Continue using
 normal commands such as `cargo build`, `cargo test`, and `cargo +stable check`.
 
@@ -50,7 +50,8 @@ Set at most one threshold, as a positive integer in GiB (1,073,741,824 bytes):
 - `max_target_size_gib`: clean when the Cargo target directory's total file size
   is **greater than** this limit.
 - `min_free_space_gib`: clean when available space on the filesystem containing
-  the workspace root is **less than** this minimum.
+  the workspace root is **less than** this minimum. It cleans the largest recorded
+  target directory, which may belong to another project.
 
 The selected condition triggers one `cargo clean` before the requested command.
 Setting both thresholds is an error and stops the command before Cargo runs.
@@ -86,6 +87,33 @@ other projects' artifacts. Source files remain intact, but the next build must
 rebuild artifacts. Cleanup runs once; it does not guarantee enough space for the
 next build and does not coordinate a separate clean/build transaction with other
 Cargo processes. Cargo's own locking still applies.
+
+## Project registry
+
+Before each supported build command, Cargo metadata identifies the current
+workspace and target directory. If the target directory exists, the project is
+registered in `~/.cargo-cleaner/projects.toml` before cleanup is evaluated.
+`HOME` must be set. Projects are discovered through wrapper invocations; there is
+no filesystem-wide scan. A first build without a target directory is registered
+on a later invocation after the target exists.
+
+Registration also runs when no cleanup policy is configured or an empty config
+disables cleanup for the current invocation. Such a project can still be selected
+by a later invocation's free-space policy. Canonical target paths are deduplicated,
+including targets shared by multiple workspaces. Missing target directories and
+workspaces without a `Cargo.toml` are removed from the registry. Updates use a file
+lock and atomic replacement to preserve registrations from concurrent commands.
+
+When the free-space threshold is crossed, existing registered targets are measured
+and the largest is cleaned once. Equal sizes use registry order. Selection spans
+all recorded targets, including other filesystems; cleaning a different disk may
+not improve free space on the current workspace's filesystem. The size-limit policy
+continues to clean only the current project's target directory.
+
+Cleaning another project runs `cargo clean` in its workspace with its manifest and
+recorded target directory. The current invocation's `+toolchain`, `--config`, and
+manifest flags are not applied to another project. Registry read/write errors,
+invalid registry data, and failed cleanup stop the requested command.
 
 ## Forwarding and disabling
 
