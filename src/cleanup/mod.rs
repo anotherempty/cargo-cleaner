@@ -262,7 +262,7 @@ struct Invocation<'a> {
 }
 
 impl<'a> Invocation<'a> {
-    const METADATA_FORMAT: &str = "--format-version=1";
+    const METADATA_FORMAT: &'static str = "--format-version=1";
 
     fn parse(args: &'a [OsString]) -> Option<Self> {
         let mut result = Self {
