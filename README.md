@@ -117,25 +117,6 @@ cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```
 
-Tests use temporary projects and isolated shell configuration files. Cmd/Clink
-setup/removal is tested. Its runtime behavior still needs to be tested on Windows.
-
-Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
-`dist-workspace.toml`:
-
-```sh
-cargo install cargo-dist --version 0.33.0 --locked
-dist generate --check
-dist plan
-dist build --artifacts=local
-```
-
-Run `dist generate` after changing distribution settings. Local artifacts go to
-`target/distrib/`. To release, update `Cargo.toml` and `Cargo.lock`, run the checks,
-commit and push, then push a matching version tag such as `v0.1.0`.
-GitHub Actions publishes archives, a shell installer, and checksums to GitHub
-Releases. Pull requests check the release plan.
-
 ## License
 
 Licensed under either the [MIT license](LICENSE-MIT) or the
