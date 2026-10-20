@@ -1,7 +1,8 @@
 # cargo-cleaner
 
 A Cargo wrapper that automatically frees disk space before build commands. It runs
-`cargo clean` when configured limits are crossed, then forwards your command to Cargo.
+`cargo clean` when a target exceeds its size limit or free disk space falls below
+its minimum, then forwards your command to Cargo.
 
 ## Setup
 
@@ -11,8 +12,6 @@ ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 ```sh
 cargo binstall --git https://github.com/anotherempty/cargo-cleaner cargo-cleaner
 ```
-
-This uses binaries from GitHub Releases without requiring a crates.io package.
 
 Or use the shell installer:
 
@@ -26,7 +25,8 @@ Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 cargo-cleaner init zsh
 ```
 
-Replace `zsh` with your shell below, then open a new session:
+Replace `zsh` with the argument for your shell from the table below, then open a
+new session:
 
 | Shell | Argument | Integration file |
 | --- | --- | --- |
@@ -47,8 +47,8 @@ Bash login profiles must source `.bashrc`. Cmd integration applies to interactiv
 commands, not batch scripts. On Windows, build from source and set `HOME` to your
 user directory; prebuilt Windows distributions are not yet provided.
 
-Setup preserves other config content and creates the default global cleanup config
-if missing. Existing `cargo` functions or aliases may be replaced; remove conflicting
+Setup preserves the rest of your shell configuration and creates the default global
+cleanup config if missing. Existing `cargo` functions or aliases may be replaced; remove conflicting
 aliases in Bash, Zsh, or PowerShell first. IDEs invoking Cargo directly are unaffected.
 To remove integration, run `cargo-cleaner uninstall <shell>` and open a new session.
 The binary and cleanup configs remain installed.
@@ -74,8 +74,8 @@ across_projects = true
    only the current project's target when `false`. Both free-space fields are required.
 4. `verbose`: show cleanup progress and timings on stderr; defaults to `false`.
 
-Thresholds are positive integer GiB. Omit `[free_space]` to disable free-space
-cleanup and project registration. Existing config files are preserved during setup.
+Specify thresholds as positive whole numbers in GiB. Omit `[free_space]` to disable
+free-space cleanup and project registration. Existing config files are preserved during setup.
 
 For a project-specific size limit, add `.cargo-cleaner.toml` at the project root:
 
@@ -84,8 +84,9 @@ max_target_size_gib = 10
 verbose = true
 ```
 
-The nearest project config replaces the global size limit; an empty file disables
-size-based cleanup. `verbose` inherits the global setting when omitted.
+The nearest project configuration determines the size limit instead of the global
+configuration; an empty file disables size-based cleanup. `verbose` inherits the
+global setting when omitted.
 `[free_space]` is global-only and cannot be set or disabled by a project config.
 
 ## How it works
@@ -96,8 +97,8 @@ size-based cleanup. `verbose` inherits the global setting when omitted.
 2. With cross-project cleanup enabled, existing targets are recorded in
    `~/.cargo-cleaner/projects.toml`. Projects are discovered as you use the wrapper,
    without scanning your disk.
-3. The free-space policy runs first, then the target-size policy. Each cleans at
-   most one target. Cleanup removes **all Cargo artifacts in the selected target**,
+3. The free-space policy runs first, then the target-size policy. Each policy cleans
+   at most one target directory. Cleanup removes **all Cargo artifacts in the selected target**,
    including other profiles or projects sharing it. Source files remain intact.
 4. The original command runs with its arguments and exit status preserved.
    Configuration, measurement, registry, or cleanup errors stop the command.
@@ -117,7 +118,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 Tests use temporary projects and isolated shell configuration files. Cmd/Clink
-setup/removal is tested; its runtime behavior also needs Windows validation.
+setup/removal is tested. Its runtime behavior still needs to be tested on Windows.
 
 Releases use [cargo-dist](https://axodotdev.github.io/cargo-dist/), configured in
 `dist-workspace.toml`:
@@ -133,7 +134,7 @@ Run `dist generate` after changing distribution settings. Local artifacts go to
 `target/distrib/`. To release, update `Cargo.toml` and `Cargo.lock`, run the checks,
 commit and push, then push a matching version tag such as `v0.1.0`.
 GitHub Actions publishes archives, a shell installer, and checksums to GitHub
-Releases. Pull requests check the release plan; crates.io publishing is separate.
+Releases. Pull requests check the release plan.
 
 ## License
 
