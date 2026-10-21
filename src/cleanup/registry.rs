@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -5,12 +6,14 @@ use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
+use super::filesystem::FilesystemId;
+
 use crate::error::{Error, FileOperation};
 
 #[derive(Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Registry {
-    projects: Vec<Project>,
+    filesystems: BTreeMap<FilesystemId, Vec<Project>>,
 }
 
 impl Registry {
@@ -43,21 +46,16 @@ impl Registry {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
             Err(source) => return Err(Error::file(FileOperation::Read, &path, source)),
         };
-        let mut projects = Vec::new();
-        for project in registry.projects {
-            if let Some(project) = Project::resolve(&project.workspace, &project.target)?
-                && !projects
-                    .iter()
-                    .any(|existing: &Project| existing.target == project.target)
-            {
-                projects.push(project);
+        let mut refreshed = Self::default();
+        for project in registry.filesystems.into_values().flatten() {
+            if let Some(project) = Project::resolve(&project.workspace, &project.target)? {
+                refreshed.insert(project)?;
             }
         }
         if let Some(current) = Project::resolve(workspace, target)? {
-            projects.retain(|project| project.target != current.target);
-            projects.push(current);
+            refreshed.insert(current)?;
         }
-        let registry = Self { projects };
+        let registry = refreshed;
         let mut temporary = tempfile::NamedTempFile::new_in(&directory)
             .map_err(|source| Error::file(FileOperation::Create, &path, source))?;
         let contents =
@@ -78,21 +76,36 @@ impl Registry {
         // Dropping the file releases the lock, including on any error above.
         drop(lock);
         tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
-            projects = registry.projects.len(),
+            projects = registry.filesystems.values().map(Vec::len).sum::<usize>(),
             "cargo-cleaner: project registry updated"
         );
         Ok(registry)
     }
 
-    pub(super) fn heaviest(&self) -> Result<Option<&Project>, Error> {
+    fn insert(&mut self, project: Project) -> Result<(), Error> {
+        let filesystem = FilesystemId::resolve(&project.target)?;
+        let projects = self.filesystems.entry(filesystem).or_default();
+        projects.retain(|existing| existing.target != project.target);
+        projects.push(project);
+        Ok(())
+    }
+
+    pub(super) fn heaviest(&self, filesystem: FilesystemId) -> Result<Option<&Project>, Error> {
+        let projects = self
+            .filesystems
+            .get(&filesystem)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
         let started = std::time::Instant::now();
         tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
-            projects = self.projects.len(),
+            projects = projects.len(),
             "cargo-cleaner: scanning registered targets for the largest"
         );
         let mut largest = None;
-        for project in &self.projects {
-            if Project::resolve(&project.workspace, &project.target)?.is_none() {
+        for project in projects {
+            if Project::resolve(&project.workspace, &project.target)?.is_none()
+                || FilesystemId::resolve(&project.target)? != filesystem
+            {
                 continue;
             }
             tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), "cargo-cleaner: measuring registered target");

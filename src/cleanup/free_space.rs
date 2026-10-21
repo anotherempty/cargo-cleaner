@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use super::filesystem::FilesystemId;
 use super::registry::Registry;
 use super::{ByteLimit, Cleanup, Invocation, PolicyError, Threshold, Workspace};
 use crate::error::{CargoOperation, Error, FileOperation};
@@ -31,11 +32,12 @@ impl FreeSpacePolicy {
         if let Selection::AcrossProjects(registry) = &mut self.selection {
             *registry = Registry::register(&workspace.workspace_root, target)?;
         }
-        let available = fs2::available_space(&workspace.workspace_root).map_err(|source| {
-            Error::file(FileOperation::FreeSpace, &workspace.workspace_root, source)
-        })?;
+        let filesystem_path = FilesystemId::existing_path(target)?;
+        let filesystem = FilesystemId::resolve(&filesystem_path)?;
+        let available = fs2::available_space(&filesystem_path)
+            .map_err(|source| Error::file(FileOperation::FreeSpace, &filesystem_path, source))?;
         tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
-            workspace = %workspace.workspace_root.display(),
+            target = %target.display(),
             available_bytes = available,
             minimum_bytes = self.limit.get(),
             "cargo-cleaner: checked free disk space"
@@ -50,7 +52,7 @@ impl FreeSpacePolicy {
                 Cleanup::clean(invocation.command(CargoOperation::Clean), target)?
             }
             Selection::AcrossProjects(registry) => {
-                if let Some(project) = registry.heaviest()? {
+                if let Some(project) = registry.heaviest(filesystem)? {
                     let command = if project.is_current(&workspace.workspace_root, target)? {
                         invocation.command(CargoOperation::Clean)
                     } else {

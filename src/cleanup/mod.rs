@@ -1,3 +1,4 @@
+mod filesystem;
 mod free_space;
 mod registry;
 
