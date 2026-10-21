@@ -1,3 +1,7 @@
+#[cfg(windows)]
+#[path = "shells/windows.rs"]
+mod windows;
+
 #[cfg(all(unix, test))]
 mod tests {
     use std::fs;
@@ -337,6 +341,7 @@ mod tests {
         assert_eq!(output.stderr, b"diagnostic");
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn ion_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();

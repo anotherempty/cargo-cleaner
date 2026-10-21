@@ -1,0 +1,15 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.test
+    volumes:
+      - .:/workspace:ro
+      - test-target:/target
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-git:/usr/local/cargo/git
+
+volumes:
+  test-target:
+  cargo-registry:
+  cargo-git:
