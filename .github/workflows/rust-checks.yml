@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RUSTUP_TOOLCHAIN: 1.97.0
+
 jobs:
   rust:
     runs-on: ubuntu-24.04
@@ -18,6 +21,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
+      - uses: Swatinem/rust-cache@v2
       - name: Verify formatting
         run: |
           cargo +1.97.0 fmt --all

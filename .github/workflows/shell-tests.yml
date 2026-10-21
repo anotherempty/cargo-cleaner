@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RUSTUP_TOOLCHAIN: 1.97.0
+
 jobs:
   linux:
     runs-on: ubuntu-24.04
@@ -16,8 +19,31 @@ jobs:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - name: Build cached shell test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.test
+          load: true
+          tags: cargo-cleaner-test:local
+          cache-from: type=gha,scope=shell-test-image
+          cache-to: type=gha,scope=shell-test-image,mode=max
+      - name: Cache container Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cargo-cache
+          key: shell-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docker/Dockerfile.test', 'Cargo.lock', 'Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            shell-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docker/Dockerfile.test', 'Cargo.lock', 'Cargo.toml') }}-
       - name: Test Linux shells in Docker
-        run: docker compose run --build --rm test
+        run: |
+          mkdir -p "$RUNNER_TEMP/cargo-cache/target" "$RUNNER_TEMP/cargo-cache/registry" "$RUNNER_TEMP/cargo-cache/git"
+          docker compose run --pull never --rm \
+            --volume "$RUNNER_TEMP/cargo-cache/target:/target" \
+            --volume "$RUNNER_TEMP/cargo-cache/registry:/usr/local/cargo/registry" \
+            --volume "$RUNNER_TEMP/cargo-cache/git:/usr/local/cargo/git" \
+            test
 
   macos:
     runs-on: macos-15
@@ -27,6 +53,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
       - name: Install shells
         run: |
           brew install bash elvish fish nushell tcsh xonsh zsh
@@ -55,6 +82,7 @@ jobs:
           persist-credentials: false
       - name: Install Rust
         run: rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
       - name: Install Nushell
         shell: pwsh
         env:

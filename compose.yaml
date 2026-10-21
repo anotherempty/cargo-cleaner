@@ -1,5 +1,6 @@
 services:
   test:
+    image: cargo-cleaner-test:local
     build:
       context: .
       dockerfile: docker/Dockerfile.test
