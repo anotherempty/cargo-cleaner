@@ -125,15 +125,10 @@ docker compose run --build --rm test
 The source is mounted read-only; Docker volumes cache Cargo dependencies and build
 artifacts. The first run builds the test image.
 
-GitHub Actions also runs native macOS shell tests (excluding Ion) and Windows
-PowerShell/Nushell tests. Windows tests cover Cmd/Clink configuration; interactive
-Cmd alias expansion is not exercised. PowerShell tests use an isolated test profile.
-
 On macOS or Windows, install the relevant shells and run
 `cargo test --locked --test shells --test cli`.
 
-CI runs unit and cleanup tests, formatting validation, and Clippy directly on a
-Linux runner. Run these checks locally with:
+Run unit and cleanup tests, formatting, and Clippy locally:
 
 ```sh
 cargo test --bin cargo-cleaner --test cleanup
