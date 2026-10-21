@@ -112,7 +112,7 @@ mod tests {
             .args([
                 "--no-rc",
                 "-c",
-                "source ~/.xonshrc\ncargo @(['+stable', 'custom', '', 'with spaces', '*;$HOME'])",
+                "$XONSH_SUBPROC_RAISE_ERROR = False\nsource ~/.xonshrc\ncargo @(['+stable', 'custom', '', 'with spaces', '*;$HOME'])",
             ])
             .output()
             .unwrap();
@@ -225,6 +225,55 @@ mod tests {
             "{output:?}"
         );
         assert_eq!(output.stdout, b"+stable\0custom\0\0with spaces\0*;$HOME\0");
+        assert_eq!(output.stderr, b"diagnostic");
+    }
+
+    #[test]
+    fn powershell_selects_first_executable_when_path_has_multiple_matches() {
+        const UNEXPECTED_EXECUTABLE_EXIT_CODE: i32 = 1;
+        let fixture = Fixture::new().unwrap();
+        let root = fixture.directory.path();
+        let second = root.join("second");
+        fs::create_dir(&second).unwrap();
+        let executable = second.join("cargo-cleaner");
+        fs::write(
+            &executable,
+            format!(
+                "#!/bin/sh\nprintf 'wrong executable' >&2\nexit {UNEXPECTED_EXECUTABLE_EXIT_CODE}\n"
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&executable, fs::Permissions::from_mode(EXECUTABLE_MODE)).unwrap();
+        let mut paths = vec![root.to_owned(), second];
+        paths.extend(std::env::split_paths(
+            &std::env::var_os("PATH").unwrap_or_default(),
+        ));
+        let output = fixture
+            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .unwrap()
+            .args(["init", "powershell"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        let output = fixture
+            .command("pwsh")
+            .unwrap()
+            .env("PATH", std::env::join_paths(paths).unwrap())
+            .args([
+                "-NoLogo",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                ". $PROFILE.CurrentUserAllHosts; cargo custom; exit $LASTEXITCODE",
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(FORWARDED_EXIT_CODE),
+            "{output:?}"
+        );
+        assert_eq!(output.stdout, b"custom\0");
         assert_eq!(output.stderr, b"diagnostic");
     }
 
