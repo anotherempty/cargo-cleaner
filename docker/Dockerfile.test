@@ -1,0 +1,36 @@
+FROM rust:1.97-trixie
+
+ARG NU_VERSION=0.116.1
+ARG POWERSHELL_VERSION=7.6.7
+ARG ION_REVISION=e9b3ca48b7ab6444498d5c3aa902d471ce29f759
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash ca-certificates curl elvish fish git libicu76 libssl3t64 \
+        tcsh xonsh zsh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Release archives are available for both supported Linux architectures.
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+        amd64) nu_arch=x86_64; pwsh_arch=x64 ;; \
+        arm64) nu_arch=aarch64; pwsh_arch=arm64 ;; \
+        *) exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/nushell/nushell/releases/download/${NU_VERSION}/nu-${NU_VERSION}-${nu_arch}-unknown-linux-gnu.tar.gz" -o /tmp/nu.tar.gz; \
+    tar -xzf /tmp/nu.tar.gz -C /tmp; \
+    install "/tmp/nu-${NU_VERSION}-${nu_arch}-unknown-linux-gnu/nu" /usr/local/bin/nu; \
+    mkdir -p /opt/powershell; \
+    curl -fsSL "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/powershell-${POWERSHELL_VERSION}-linux-${pwsh_arch}.tar.gz" -o /tmp/pwsh.tar.gz; \
+    tar -xzf /tmp/pwsh.tar.gz -C /opt/powershell; \
+    chmod +x /opt/powershell/pwsh; \
+    ln -s /opt/powershell/pwsh /usr/local/bin/pwsh; \
+    rm -rf /tmp/nu* /tmp/pwsh.tar.gz
+
+RUN cargo install --locked --git https://github.com/redox-os/ion.git \
+    --rev "${ION_REVISION}" --root /opt/ion ion-shell \
+    && ln -s /opt/ion/bin/ion /usr/local/bin/ion
+
+ENV CARGO_TARGET_DIR=/target
+WORKDIR /workspace
+CMD ["cargo", "test", "--locked", "--test", "shells", "--test", "cli"]

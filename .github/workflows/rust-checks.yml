@@ -1,0 +1,32 @@
+name: Rust checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUSTUP_TOOLCHAIN: 1.97.0
+
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install 1.97.0 --profile minimal --component rustfmt --component clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify formatting
+        run: |
+          cargo +1.97.0 fmt --all
+          git diff --exit-code -- '*.rs'
+      - name: Clippy
+        run: cargo +1.97.0 clippy --locked --all-targets --all-features -- -D warnings
+      - name: Unit and cleanup tests
+        run: cargo +1.97.0 test --locked --all-features --bin cargo-cleaner --test cleanup

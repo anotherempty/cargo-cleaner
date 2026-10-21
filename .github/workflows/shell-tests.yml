@@ -1,0 +1,100 @@
+name: Shell tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUSTUP_TOOLCHAIN: 1.97.0
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v3
+      - name: Build cached shell test image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.test
+          load: true
+          tags: cargo-cleaner-test:local
+          cache-from: type=gha,scope=shell-test-image
+          cache-to: type=gha,scope=shell-test-image,mode=max
+      - name: Cache container Cargo artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/cargo-cache
+          key: shell-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docker/Dockerfile.test', 'Cargo.lock', 'Cargo.toml') }}-${{ github.sha }}
+          restore-keys: |
+            shell-cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('docker/Dockerfile.test', 'Cargo.lock', 'Cargo.toml') }}-
+      - name: Test Linux shells in Docker
+        run: |
+          mkdir -p "$RUNNER_TEMP/cargo-cache/target" "$RUNNER_TEMP/cargo-cache/registry" "$RUNNER_TEMP/cargo-cache/git"
+          docker compose run --pull never --rm \
+            --volume "$RUNNER_TEMP/cargo-cache/target:/target" \
+            --volume "$RUNNER_TEMP/cargo-cache/registry:/usr/local/cargo/registry" \
+            --volume "$RUNNER_TEMP/cargo-cache/git:/usr/local/cargo/git" \
+            test
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Install shells
+        run: |
+          brew install bash elvish fish nushell tcsh xonsh zsh
+      - name: Install PowerShell
+        env:
+          POWERSHELL_VERSION: 7.6.7
+        run: |
+          case "$(uname -m)" in
+            arm64) arch=arm64 ;;
+            x86_64) arch=x64 ;;
+            *) exit 1 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/powershell"
+          curl -fsSL "https://github.com/PowerShell/PowerShell/releases/download/v${POWERSHELL_VERSION}/powershell-${POWERSHELL_VERSION}-osx-${arch}.tar.gz" -o "$RUNNER_TEMP/powershell.tar.gz"
+          tar -xzf "$RUNNER_TEMP/powershell.tar.gz" -C "$RUNNER_TEMP/powershell"
+          chmod +x "$RUNNER_TEMP/powershell/pwsh"
+          echo "$RUNNER_TEMP/powershell" >> "$GITHUB_PATH"
+      - name: Test macOS shells
+        run: cargo +1.97.0 test --locked --test shells --test cli
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install 1.97.0 --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Nushell
+        shell: pwsh
+        env:
+          NU_VERSION: 0.116.1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'nu.zip'
+          $destination = Join-Path $env:RUNNER_TEMP 'nushell'
+          Invoke-WebRequest "https://github.com/nushell/nushell/releases/download/$env:NU_VERSION/nu-$env:NU_VERSION-x86_64-pc-windows-msvc.zip" -OutFile $archive
+          Expand-Archive $archive -DestinationPath $destination
+          $binary = Get-ChildItem $destination -Recurse -Filter nu.exe | Select-Object -First 1
+          if (!$binary) { throw 'Nushell executable missing from archive' }
+          $binary.DirectoryName >> $env:GITHUB_PATH
+      - name: Test Windows shells
+        run: cargo +1.97.0 test --locked --test shells --test cli
