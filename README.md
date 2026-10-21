@@ -132,7 +132,8 @@ Cmd alias expansion is not exercised. PowerShell tests use an isolated test prof
 On macOS or Windows, install the relevant shells and run
 `cargo test --locked --test shells --test cli`.
 
-Run the remaining tests and Rust checks locally:
+CI runs unit and cleanup tests, formatting validation, and Clippy directly on a
+Linux runner. Run these checks locally with:
 
 ```sh
 cargo test --bin cargo-cleaner --test cleanup
