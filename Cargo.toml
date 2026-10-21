@@ -19,6 +19,7 @@ tempfile = "3"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "std"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dependencies]
 clap.workspace = true
@@ -30,6 +31,9 @@ tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
 
 [lints.clippy]
 unwrap_used = "deny"

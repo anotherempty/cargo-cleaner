@@ -93,6 +93,16 @@ esac
             Ok(fixture)
         }
 
+        fn registered_projects(registry: &toml::Value) -> Option<Vec<&toml::Value>> {
+            let groups = registry
+                .get("filesystems")?
+                .as_table()?
+                .values()
+                .map(toml::Value::as_array)
+                .collect::<Option<Vec<_>>>()?;
+            Some(groups.into_iter().flatten().collect())
+        }
+
         fn global(&self, config: &str) -> std::io::Result<()> {
             fs::write(self.root.join("home/.cargo-cleaner.toml"), config)
         }
@@ -636,6 +646,116 @@ esac
         );
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn cross_project_cleanup_selects_only_the_targets_filesystem() {
+        use std::os::unix::fs::MetadataExt;
+        const LOCAL_ARTIFACT_BYTES: u64 = 64;
+        const REMOTE_ARTIFACT_BYTES: u64 = 8;
+        const FILESYSTEM_COUNT: usize = 2;
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
+        let other = tempfile::tempdir_in("/dev/shm").unwrap();
+        assert_ne!(
+            fs::metadata(&fixture.root).unwrap().dev(),
+            fs::metadata(other.path()).unwrap().dev()
+        );
+        fixture
+            .artifact("target/artifact", LOCAL_ARTIFACT_BYTES)
+            .unwrap();
+        assert_eq!(
+            fixture.run(&["build"]).unwrap().status.code(),
+            Some(FORWARDED_EXIT_CODE)
+        );
+        fs::write(
+            other.path().join("artifact"),
+            vec![0; REMOTE_ARTIFACT_BYTES as usize],
+        )
+        .unwrap();
+        fs::write(fixture.root.join("calls"), "").unwrap();
+        // The workspace stays on the original filesystem; only the target changes.
+        let output = fixture
+            .run(&["build", "--target-dir", other.path().to_str().unwrap()])
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert_eq!(
+            fixture
+                .calls()
+                .unwrap()
+                .lines()
+                .nth(CLEAN_CALL_INDEX)
+                .unwrap(),
+            format!("clean --target-dir {}", other.path().display())
+        );
+        let registry: toml::Value = toml::from_str(
+            &fs::read_to_string(fixture.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            registry["filesystems"].as_table().unwrap().len(),
+            FILESYSTEM_COUNT
+        );
+        // Once this target disappears, the remaining target on the workspace's
+        // filesystem must not become eligible for cleanup.
+        let missing = other.path().join("missing-target");
+        other.close().unwrap();
+        fs::write(fixture.root.join("calls"), "").unwrap();
+        let output = fixture
+            .run(&["build", "--target-dir", missing.to_str().unwrap()])
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert_eq!(
+            fixture.calls().unwrap().lines().count(),
+            METADATA_AND_FORWARD_CALLS
+        );
+    }
+
+    #[test]
+    fn registry_refreshes_stale_filesystem_groups() {
+        const STALE_FILESYSTEM: &str = "18446744073709551615";
+        let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
+        let directory = fixture.root.join("home/.cargo-cleaner");
+        fs::create_dir_all(&directory).unwrap();
+        let registry = toml::toml! {
+            [filesystems]
+        };
+        let mut registry = toml::Value::Table(registry);
+        registry["filesystems"].as_table_mut().unwrap().insert(
+            STALE_FILESYSTEM.into(),
+            vec![
+                toml::Value::try_from(serde_json::json!({
+                    "workspace": fixture.root,
+                    "target": fixture.root.join("target"),
+                }))
+                .unwrap(),
+            ]
+            .into(),
+        );
+        fs::write(
+            directory.join("projects.toml"),
+            toml::to_string(&registry).unwrap(),
+        )
+        .unwrap();
+        // A missing current target cannot replace the stored entry, so selection
+        // demonstrates that registration refreshed the stored filesystem identity.
+        let missing = fixture.root.join("missing-target");
+        let output = fixture
+            .run(&["build", "--target-dir", missing.to_str().unwrap()])
+            .unwrap();
+        assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
+        assert!(fixture.calls().unwrap().contains(&format!(
+            "--target-dir {}",
+            fixture.root.join("target").display()
+        )));
+        let updated: toml::Value =
+            toml::from_str(&fs::read_to_string(directory.join("projects.toml")).unwrap()).unwrap();
+        assert!(
+            !updated["filesystems"]
+                .as_table()
+                .unwrap()
+                .contains_key(STALE_FILESYSTEM)
+        );
+    }
+
     #[test]
     fn registry_deduplicates_targets_and_prunes_removed_projects() {
         const PROJECT_COUNT: usize = 1;
@@ -650,7 +770,7 @@ esac
         let path = old.root.join("home/.cargo-cleaner/projects.toml");
         let registry: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
-            registry["projects"].as_array().unwrap().len(),
+            Fixture::registered_projects(&registry).unwrap().len(),
             PROJECT_COUNT
         );
         fs::remove_dir_all(old.root.join("target")).unwrap();
@@ -665,11 +785,13 @@ esac
         assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
         let registry: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
-            registry["projects"].as_array().unwrap().len(),
+            Fixture::registered_projects(&registry).unwrap().len(),
             PROJECT_COUNT
         );
         assert_eq!(
-            registry["projects"][0]["workspace"].as_str().unwrap(),
+            Fixture::registered_projects(&registry).unwrap()[0]["workspace"]
+                .as_str()
+                .unwrap(),
             current.root.to_str().unwrap()
         );
     }
@@ -690,7 +812,7 @@ esac
             &fs::read_to_string(fixture.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
         )
         .unwrap();
-        assert!(registry["projects"].as_array().unwrap().is_empty());
+        assert!(Fixture::registered_projects(&registry).unwrap().is_empty());
     }
 
     #[test]
@@ -870,7 +992,7 @@ esac
         )
         .unwrap();
         assert_eq!(
-            registry["projects"].as_array().unwrap().len(),
+            Fixture::registered_projects(&registry).unwrap().len(),
             PROJECT_COUNT
         );
     }
@@ -897,7 +1019,7 @@ esac
         )
         .unwrap();
         assert_eq!(
-            registry["projects"].as_array().unwrap().len(),
+            Fixture::registered_projects(&registry).unwrap().len(),
             PROJECT_COUNT
         );
     }

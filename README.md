@@ -68,10 +68,11 @@ across_projects = true
 ```
 
 1. `max_target_size_gib`: clean the current target when its size exceeds this limit.
-2. `free_space.min_free_space_gib`: clean when free space on the workspace's
+2. `free_space.min_free_space_gib`: clean when free space on the target directory's
    filesystem falls below this minimum.
-3. `free_space.across_projects`: clean the largest known target when `true`, or
-   only the current project's target when `false`. Both free-space fields are required.
+3. `free_space.across_projects`: clean the largest known target on the current
+   target's filesystem when `true`, or only the current project's target when
+   `false`. Both free-space fields are required.
 4. `verbose`: show cleanup progress and timings on stderr; defaults to `false`.
 
 Specify thresholds as positive whole numbers in GiB. Omit `[free_space]` to disable
@@ -95,16 +96,22 @@ global setting when omitted.
    `rustdoc`, the wrapper asks Cargo for the workspace and target directory.
    Standard single-letter aliases are supported; other commands pass through.
 2. With cross-project cleanup enabled, existing targets are recorded in
-   `~/.cargo-cleaner/projects.toml`. Projects are discovered as you use the wrapper,
-   without scanning your disk.
+   `~/.cargo-cleaner/projects.toml`, grouped by target filesystem. Projects are
+   discovered as you use the wrapper, without scanning your disk. Each registry
+   update refreshes filesystem identities, removes missing projects or targets,
+   and deduplicates shared target directories.
 3. The free-space policy runs first, then the target-size policy. Each policy cleans
    at most one target directory. Cleanup removes **all Cargo artifacts in the selected target**,
    including other profiles or projects sharing it. Source files remain intact.
 4. The original command runs with its arguments and exit status preserved.
    Configuration, measurement, registry, or cleanup errors stop the command.
 
-Cleanup does not guarantee enough space for the next build. Cross-project cleanup
-can select a target on another filesystem, which may not free space where needed.
+### Cleanup across disks
+
+Cross-project cleanup selects targets only on the current target's filesystem.
+Symlinks are resolved; missing targets use their nearest existing ancestor.
+If no eligible target exists, cleanup is skipped. Cleaning one target does not
+guarantee enough space for the next build.
 
 ## Development
 
