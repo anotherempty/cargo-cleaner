@@ -17,8 +17,10 @@ Use their current values rather than hardcoding a tool version, repository, or p
    described below. A request only to prepare or validate a release
    stops before publishing. Creating or editing this skill does not authorize a release.
 2. Inspect the working tree, branch, remotes, and local and remote tags. Preserve
-   unrelated work. Default to releasing `main`; do not silently release a feature branch.
-   Fetch the intended remote and reconcile its state before preparing the release.
+   unrelated work. Unless the user explicitly specifies another release source,
+   fetch `origin` and prepare the release from the latest fetched `origin/main`.
+   Use that commit as the base for release changes, not local `main` or the current
+   branch. Use a separate checkout or worktree when needed to preserve local work.
 3. Use the requested version. If none is supplied and the package's current version
    has no release tag, use that version. If its tag belongs to a failed unpublished
    attempt, clean up that attempt and reuse the version. If the version was already
