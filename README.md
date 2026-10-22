@@ -10,13 +10,13 @@ Requires Cargo and a supported shell. Install a prebuilt binary for Linux or mac
 ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
-cargo binstall --git https://github.com/anotherempty/cargo-cleaner cargo-target-cleaner
+cargo binstall --git https://github.com/anotherempty/cargo-target-cleaner cargo-target-cleaner
 ```
 
 Or use the shell installer:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-cleaner/releases/latest/download/cargo-target-cleaner-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-target-cleaner/releases/latest/download/cargo-target-cleaner-installer.sh | sh
 ```
 
 Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:

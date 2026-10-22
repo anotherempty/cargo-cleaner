@@ -3,7 +3,7 @@ name = "cargo-target-cleaner"
 version = "0.1.2"
 edition = "2024"
 description = "A Cargo command wrapper with automatic cleanup across known projects"
-repository = "https://github.com/anotherempty/cargo-cleaner"
+repository = "https://github.com/anotherempty/cargo-target-cleaner"
 license = "MIT OR Apache-2.0"
 
 [workspace]
