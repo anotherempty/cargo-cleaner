@@ -58,7 +58,7 @@ mod tests {
         fn new(config: &str) -> std::io::Result<Self> {
             static NEXT: AtomicU64 = AtomicU64::new(0);
             let root = std::env::temp_dir().join(format!(
-                "cargo-cleaner-policy-{}-{}",
+                "cargo-target-cleaner-policy-{}-{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
@@ -66,7 +66,7 @@ mod tests {
             fs::create_dir_all(root.join("home"))?;
             fs::create_dir_all(root.join("target"))?;
             fs::create_dir_all(root.join("member/src"))?;
-            fs::write(root.join(".cargo-cleaner.toml"), config)?;
+            fs::write(root.join(".cargo-target-cleaner.toml"), config)?;
             fs::write(root.join("Cargo.toml"), "[workspace]\n")?;
             let script = root.join("bin/cargo");
             fs::write(
@@ -104,7 +104,7 @@ esac
         }
 
         fn global(&self, config: &str) -> std::io::Result<()> {
-            fs::write(self.root.join("home/.cargo-cleaner.toml"), config)
+            fs::write(self.root.join("home/.cargo-target-cleaner.toml"), config)
         }
 
         fn command(&self, args: &[&str]) -> Result<Command, FixtureError> {
@@ -112,7 +112,7 @@ esac
             paths.extend(std::env::split_paths(
                 &std::env::var_os("PATH").unwrap_or_default(),
             ));
-            let mut command = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_cargo-target-cleaner"));
             command
                 .args(["exec", "--"])
                 .args(args)
@@ -378,7 +378,7 @@ esac
         for absent in [false, true] {
             let fixture = Fixture::new("").unwrap();
             if absent {
-                fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+                fs::remove_file(fixture.root.join(".cargo-target-cleaner.toml")).unwrap();
             }
             assert_eq!(
                 fixture.run(&["build"]).unwrap().status.code(),
@@ -393,12 +393,12 @@ esac
         for project in [None, Some(""), Some(TARGET_LIMIT_CONFIG)] {
             let fixture = Fixture::new(project.unwrap_or("")).unwrap();
             fs::write(
-                fixture.root.join("home/.cargo-cleaner.toml"),
+                fixture.root.join("home/.cargo-target-cleaner.toml"),
                 LOW_DISK_CONFIG,
             )
             .unwrap();
             if project.is_none() {
-                fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+                fs::remove_file(fixture.root.join(".cargo-target-cleaner.toml")).unwrap();
             }
             assert_eq!(
                 fixture.run(&["build"]).unwrap().status.code(),
@@ -424,7 +424,7 @@ esac
     fn nearest_config_overrides_parent_and_symlinks_are_not_traversed() {
         let fixture = Fixture::new("invalid parent config").unwrap();
         fs::write(
-            fixture.root.join("member/.cargo-cleaner.toml"),
+            fixture.root.join("member/.cargo-target-cleaner.toml"),
             TARGET_LIMIT_CONFIG,
         )
         .unwrap();
@@ -481,7 +481,7 @@ esac
         let marker = fixture.root.join("custom-target/cleanup-marker");
         fs::write(&marker, "old artifact").unwrap();
         fixture.global(LOW_DISK_CONFIG).unwrap();
-        let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+        let output = Command::new(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .args(["exec", "--", "build", "--offline"])
             .current_dir(fixture.root.join("member/src"))
             .env("HOME", fixture.root.join("home"))
@@ -687,7 +687,12 @@ esac
             format!("clean --target-dir {}", other.path().display())
         );
         let registry: toml::Value = toml::from_str(
-            &fs::read_to_string(fixture.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+            &fs::read_to_string(
+                fixture
+                    .root
+                    .join("home/.cargo-target-cleaner/projects.toml"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -713,7 +718,7 @@ esac
     fn registry_refreshes_stale_filesystem_groups() {
         const STALE_FILESYSTEM: &str = "18446744073709551615";
         let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
-        let directory = fixture.root.join("home/.cargo-cleaner");
+        let directory = fixture.root.join("home/.cargo-target-cleaner");
         fs::create_dir_all(&directory).unwrap();
         let registry = toml::toml! {
             [filesystems]
@@ -767,7 +772,7 @@ esac
                 Some(FORWARDED_EXIT_CODE)
             );
         }
-        let path = old.root.join("home/.cargo-cleaner/projects.toml");
+        let path = old.root.join("home/.cargo-target-cleaner/projects.toml");
         let registry: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(
             Fixture::registered_projects(&registry).unwrap().len(),
@@ -809,7 +814,12 @@ esac
             METADATA_AND_FORWARD_CALLS
         );
         let registry: toml::Value = toml::from_str(
-            &fs::read_to_string(fixture.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+            &fs::read_to_string(
+                fixture
+                    .root
+                    .join("home/.cargo-target-cleaner/projects.toml"),
+            )
+            .unwrap(),
         )
         .unwrap();
         assert!(Fixture::registered_projects(&registry).unwrap().is_empty());
@@ -818,7 +828,7 @@ esac
     #[test]
     fn malformed_registry_is_not_overwritten_and_blocks_cleanup() {
         let fixture = Fixture::with_global(LOW_DISK_CONFIG).unwrap();
-        let directory = fixture.root.join("home/.cargo-cleaner");
+        let directory = fixture.root.join("home/.cargo-target-cleaner");
         fs::create_dir(&directory).unwrap();
         let path = directory.join("projects.toml");
         fs::write(&path, "invalid registry").unwrap();
@@ -866,7 +876,7 @@ esac
                 REGISTRATION_CONFIG
             })
             .unwrap();
-            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
                 .args(["exec", "--", "build", "--offline"])
                 .current_dir(&fixture.root)
                 .env("HOME", old.root.join("home"))
@@ -929,7 +939,7 @@ esac
             } else {
                 &selected
             };
-            let output = Command::new(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            let output = Command::new(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
                 .args(["exec", "--", "build", "--offline"])
                 .current_dir(&building.root)
                 .env("HOME", selected.root.join("home"))
@@ -988,7 +998,8 @@ esac
             Some(FORWARDED_EXIT_CODE)
         );
         let registry: toml::Value = toml::from_str(
-            &fs::read_to_string(first.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+            &fs::read_to_string(first.root.join("home/.cargo-target-cleaner/projects.toml"))
+                .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1015,7 +1026,8 @@ esac
             .unwrap();
         assert_eq!(output.status.code(), Some(FORWARDED_EXIT_CODE));
         let registry: toml::Value = toml::from_str(
-            &fs::read_to_string(first.root.join("home/.cargo-cleaner/projects.toml")).unwrap(),
+            &fs::read_to_string(first.root.join("home/.cargo-target-cleaner/projects.toml"))
+                .unwrap(),
         )
         .unwrap();
         assert_eq!(
@@ -1041,7 +1053,7 @@ esac
                 fixture.run(&["build"]).unwrap().status.code(),
                 Some(FORWARDED_EXIT_CODE)
             );
-            let directory = fixture.root.join("home/.cargo-cleaner");
+            let directory = fixture.root.join("home/.cargo-target-cleaner");
             assert!(!directory.exists());
             fs::create_dir(&directory).unwrap();
             let registry = directory.join("projects.toml");
@@ -1064,7 +1076,7 @@ esac
                 .artifact("target/artifact", OVERSIZED_ARTIFACT_BYTES)
                 .unwrap();
             if project.is_none() {
-                fs::remove_file(fixture.root.join(".cargo-cleaner.toml")).unwrap();
+                fs::remove_file(fixture.root.join(".cargo-target-cleaner.toml")).unwrap();
             }
             assert_eq!(
                 fixture.run(&["build"]).unwrap().status.code(),
@@ -1124,7 +1136,7 @@ esac
         const LOCAL_FREE_SPACE: &str =
             "[free_space]\nmin_free_space_gib = 1000000000\nacross_projects = false";
         let fixture = Fixture::with_global(LOCAL_FREE_SPACE).unwrap();
-        let directory = fixture.root.join("home/.cargo-cleaner");
+        let directory = fixture.root.join("home/.cargo-target-cleaner");
         fs::create_dir(&directory).unwrap();
         let path = directory.join("projects.toml");
         fs::write(&path, "invalid registry").unwrap();

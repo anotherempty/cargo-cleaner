@@ -28,7 +28,7 @@ mod tests {
         fn new() -> Result<Self, FixtureError> {
             let directory = tempfile::tempdir()?;
             let root = directory.path();
-            fs::write(root.join(".cargo-cleaner.toml"), "")?;
+            fs::write(root.join(".cargo-target-cleaner.toml"), "")?;
             fs::write(
                 root.join("cargo"),
                 format!(
@@ -40,8 +40,8 @@ mod tests {
                 fs::Permissions::from_mode(EXECUTABLE_MODE),
             )?;
             symlink(
-                env!("CARGO_BIN_EXE_cargo-cleaner"),
-                root.join("cargo-cleaner"),
+                env!("CARGO_BIN_EXE_cargo-target-cleaner"),
+                root.join("cargo-target-cleaner"),
             )?;
             Ok(Self { directory })
         }
@@ -72,7 +72,7 @@ mod tests {
             let mut installed = None;
             for _ in 0..REPEAT_COUNT {
                 let output = self
-                    .command(env!("CARGO_BIN_EXE_cargo-cleaner"))?
+                    .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))?
                     .args(["init", shell])
                     .output()?;
                 assert!(output.status.success(), "{output:?}");
@@ -85,7 +85,7 @@ mod tests {
             }
             for _ in 0..REPEAT_COUNT {
                 let output = self
-                    .command(env!("CARGO_BIN_EXE_cargo-cleaner"))?
+                    .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))?
                     .args(["uninstall", shell])
                     .output()?;
                 assert!(output.status.success(), "{output:?}");
@@ -100,7 +100,7 @@ mod tests {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("xonsh", ".xonshrc").unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "xonsh"])
             .output()
@@ -130,7 +130,7 @@ mod tests {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("tcsh", ".tcshrc").unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "tcsh"])
             .output()
@@ -172,7 +172,7 @@ mod tests {
             }
             for action in ["init", "init", "uninstall", "uninstall"] {
                 let output = fixture
-                    .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+                    .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
                     .unwrap()
                     .args([action, "tcsh"])
                     .output()
@@ -187,7 +187,7 @@ mod tests {
                 assert!(output.status.success(), "{output:?}");
                 let source = if has_tcshrc { "tcshrc" } else { "cshrc" };
                 let expected = if action == "init" {
-                    format!("{source}\ncargo-cleaner exec --\n")
+                    format!("{source}\ncargo-target-cleaner exec --\n")
                 } else {
                     format!("{source}\n")
                 };
@@ -209,7 +209,7 @@ mod tests {
             .lifecycle("powershell", ".config/powershell/profile.ps1")
             .unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "powershell"])
             .output()
@@ -235,7 +235,7 @@ mod tests {
         let root = fixture.directory.path();
         let second = root.join("second");
         fs::create_dir(&second).unwrap();
-        let executable = second.join("cargo-cleaner");
+        let executable = second.join("cargo-target-cleaner");
         fs::write(
             &executable,
             format!(
@@ -249,7 +249,7 @@ mod tests {
             &std::env::var_os("PATH").unwrap_or_default(),
         ));
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "powershell"])
             .output()
@@ -281,7 +281,7 @@ mod tests {
     fn powershell_preserves_failure_status_and_cargo_flags() {
         let fixture = Fixture::new().unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "powershell"])
             .output()
@@ -320,7 +320,7 @@ mod tests {
     fn powershell_forwards_pipeline_and_direct_stdin_once() {
         let fixture = Fixture::new().unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "powershell"])
             .output()
@@ -366,7 +366,7 @@ mod tests {
             .lifecycle("nu", ".config/nushell/config.nu")
             .unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "nu"])
             .output()
@@ -396,7 +396,7 @@ mod tests {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("ion", ".config/ion/initrc").unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "ion"])
             .output()
@@ -418,10 +418,10 @@ mod tests {
     fn fish_setup_removal_and_forwarding() {
         let fixture = Fixture::new().unwrap();
         fixture
-            .lifecycle("fish", ".config/fish/conf.d/cargo-cleaner.fish")
+            .lifecycle("fish", ".config/fish/conf.d/cargo-target-cleaner.fish")
             .unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "fish"])
             .output()
@@ -433,7 +433,7 @@ mod tests {
             .args([
                 "--no-config",
                 "-c",
-                "source $HOME/.config/fish/conf.d/cargo-cleaner.fish; cargo $argv",
+                "source $HOME/.config/fish/conf.d/cargo-target-cleaner.fish; cargo $argv",
                 "+stable",
                 "custom",
                 "",
@@ -454,7 +454,7 @@ mod tests {
             .lifecycle("elvish", ".config/elvish/rc.elv")
             .unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "elvish"])
             .output()
@@ -482,7 +482,9 @@ mod tests {
     #[test]
     fn cmd_setup_and_removal() {
         let fixture = Fixture::new().unwrap();
-        fixture.lifecycle("cmd", "clink/cargo-cleaner.lua").unwrap();
+        fixture
+            .lifecycle("cmd", "clink/cargo-target-cleaner.lua")
+            .unwrap();
     }
 
     #[test]
@@ -490,7 +492,7 @@ mod tests {
         let fixture = Fixture::new().unwrap();
         fixture.lifecycle("bash", ".bashrc").unwrap();
         let output = fixture
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))
             .unwrap()
             .args(["init", "bash"])
             .output()

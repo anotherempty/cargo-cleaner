@@ -26,7 +26,7 @@ jobs:
           context: .
           file: docker/Dockerfile.test
           load: true
-          tags: cargo-cleaner-test:local
+          tags: cargo-target-cleaner-test:local
           cache-from: type=gha,scope=shell-test-image
           cache-to: type=gha,scope=shell-test-image,mode=max
       - name: Cache container Cargo artifacts

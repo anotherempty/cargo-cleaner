@@ -26,10 +26,10 @@ impl Shell for Fish {
 
 impl Fish {
     const FISH_INIT: &str =
-        "function cargo --wraps cargo\n    command cargo-cleaner exec -- $argv\nend\n";
+        "function cargo --wraps cargo\n    command cargo-target-cleaner exec -- $argv\nend\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
-        let path = ShellConfig::config_home()?.join("fish/conf.d/cargo-cleaner.fish");
+        let path = ShellConfig::config_home()?.join("fish/conf.d/cargo-target-cleaner.fish");
         ShellConfig::update(&path, Self::FISH_INIT, action)?;
         Ok(path)
     }

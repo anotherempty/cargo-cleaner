@@ -33,7 +33,7 @@ impl Cleanup {
         let _guard = tracing::subscriber::set_default(crate::diagnostics::Diagnostics::subscriber(
             settings.verbose,
         ));
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: resolving Cargo workspace for cleanup checks");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-target-cleaner: resolving Cargo workspace for cleanup checks");
         let workspace = invocation.workspace()?;
         let target_override = invocation.target.as_ref().map(|path| cwd.join(path));
         let target = target_override
@@ -47,13 +47,16 @@ impl Cleanup {
         {
             Self::clean(invocation.command(CargoOperation::Clean), target)?;
         }
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: cleanup checks complete; forwarding Cargo command");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-target-cleaner: cleanup checks complete; forwarding Cargo command");
         Ok(())
     }
 
     fn clean(mut command: Command, target: &Path) -> Result<(), Error> {
         let started = std::time::Instant::now();
-        tracing::info!("cargo-cleaner: running cargo clean ({})", target.display());
+        tracing::info!(
+            "cargo-target-cleaner: running cargo clean ({})",
+            target.display()
+        );
         let status = command
             .arg("--target-dir")
             .arg(target)
@@ -65,14 +68,14 @@ impl Cleanup {
         if !status.success() {
             return Err(Error::CleanFailed(status));
         }
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %target.display(), elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-cleaner: cargo clean completed");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %target.display(), elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-target-cleaner: cargo clean completed");
         Ok(())
     }
 
     fn directory_exceeds(root: &Path, limit: ByteLimit) -> Result<bool, Error> {
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), limit_bytes = limit.get(), "cargo-cleaner: checking target size limit");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), limit_bytes = limit.get(), "cargo-target-cleaner: checking target size limit");
         let exceeds = Project::target_size(root, Some(limit.get()))? > limit.get();
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), exceeds_limit = exceeds, "cargo-cleaner: target size check complete");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %root.display(), exceeds_limit = exceeds, "cargo-target-cleaner: target size check complete");
         Ok(exceeds)
     }
 }
@@ -80,7 +83,7 @@ impl Cleanup {
 pub(crate) struct Config;
 
 impl Config {
-    const FILE_NAME: &str = ".cargo-cleaner.toml";
+    const FILE_NAME: &str = ".cargo-target-cleaner.toml";
     // Keep 100 GiB available by default for Cargo builds and other applications.
     const DEFAULT_MIN_FREE_GIB: u64 = 100;
 

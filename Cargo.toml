@@ -1,5 +1,5 @@
 [package]
-name = "cargo-cleaner"
+name = "cargo-target-cleaner"
 version = "0.1.2"
 edition = "2024"
 description = "A Cargo command wrapper with automatic cleanup across known projects"

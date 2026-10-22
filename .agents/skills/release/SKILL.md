@@ -1,9 +1,9 @@
 ---
 name: release
-description: Prepare and publish cargo-cleaner releases through cargo-dist and GitHub Actions. Use when asked to make, prepare, or retry a release of this repository.
+description: Prepare and publish cargo-target-cleaner releases through cargo-dist and GitHub Actions. Use when asked to make, prepare, or retry a release of this repository.
 ---
 
-# Release cargo-cleaner
+# Release cargo-target-cleaner
 
 Read the project [Git workflow](../git-workflow/SKILL.md),
 [Cargo.toml](../../../Cargo.toml), [dist-workspace.toml](../../../dist-workspace.toml),

@@ -29,4 +29,4 @@ jobs:
       - name: Clippy
         run: cargo +1.97.0 clippy --locked --all-targets --all-features -- -D warnings
       - name: Unit and cleanup tests
-        run: cargo +1.97.0 test --locked --all-features --bin cargo-cleaner --test cleanup
+        run: cargo +1.97.0 test --locked --all-features --bin cargo-target-cleaner --test cleanup

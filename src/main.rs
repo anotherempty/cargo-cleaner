@@ -13,7 +13,7 @@ fn main() -> std::process::ExitCode {
     match app::App::run() {
         Ok(code) => code,
         Err(error) => {
-            tracing::error!("cargo-cleaner: {error}");
+            tracing::error!("cargo-target-cleaner: {error}");
             std::process::ExitCode::FAILURE
         }
     }

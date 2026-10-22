@@ -25,7 +25,7 @@ impl Shell for Zsh {
 }
 
 impl Zsh {
-    const ZSH_INIT: &str = "cargo() {\n    command cargo-cleaner exec -- \"$@\"\n}\n";
+    const ZSH_INIT: &str = "cargo() {\n    command cargo-target-cleaner exec -- \"$@\"\n}\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let directory = std::env::var_os("ZDOTDIR")

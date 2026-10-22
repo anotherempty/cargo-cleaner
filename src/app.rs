@@ -8,7 +8,7 @@ use crate::error::Error;
 
 #[derive(Parser)]
 #[command(
-    name = "cargo-cleaner",
+    name = "cargo-target-cleaner",
     version,
     about = "Automatic per-project Cargo cleanup"
 )]

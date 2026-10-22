@@ -25,7 +25,7 @@ impl Shell for Xonsh {
 }
 
 impl Xonsh {
-    const XONSH_INIT: &str = "aliases['cargo'] = ['cargo-cleaner', 'exec', '--']\n";
+    const XONSH_INIT: &str = "aliases['cargo'] = ['cargo-target-cleaner', 'exec', '--']\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let home = std::env::var_os("HOME")

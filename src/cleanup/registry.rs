@@ -18,11 +18,11 @@ pub(super) struct Registry {
 
 impl Registry {
     pub(super) fn register(workspace: &Path, target: &Path) -> Result<Self, Error> {
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, workspace = %workspace.display(), "cargo-cleaner: updating project registry");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, workspace = %workspace.display(), "cargo-target-cleaner: updating project registry");
         let home = std::env::var_os("HOME")
             .filter(|home| !home.is_empty())
             .ok_or(Error::MissingRegistryHome)?;
-        let directory = PathBuf::from(home).join(".cargo-cleaner");
+        let directory = PathBuf::from(home).join(".cargo-target-cleaner");
         fs::create_dir_all(&directory)
             .map_err(|source| Error::file(FileOperation::Create, &directory, source))?;
         let path = directory.join("projects.toml");
@@ -35,7 +35,7 @@ impl Registry {
             .truncate(false)
             .open(&lock_path)
             .map_err(|source| Error::file(FileOperation::Create, &lock_path, source))?;
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: acquiring project registry lock");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-target-cleaner: acquiring project registry lock");
         fs2::FileExt::lock_exclusive(&lock)
             .map_err(|source| Error::file(FileOperation::Lock, &lock_path, source))?;
         let registry: Self = match fs::read_to_string(&path) {
@@ -77,7 +77,7 @@ impl Registry {
         drop(lock);
         tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
             projects = registry.filesystems.values().map(Vec::len).sum::<usize>(),
-            "cargo-cleaner: project registry updated"
+            "cargo-target-cleaner: project registry updated"
         );
         Ok(registry)
     }
@@ -99,7 +99,7 @@ impl Registry {
         let started = std::time::Instant::now();
         tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
             projects = projects.len(),
-            "cargo-cleaner: scanning registered targets for the largest"
+            "cargo-target-cleaner: scanning registered targets for the largest"
         );
         let mut largest = None;
         for project in projects {
@@ -108,18 +108,18 @@ impl Registry {
             {
                 continue;
             }
-            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), "cargo-cleaner: measuring registered target");
+            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), "cargo-target-cleaner: measuring registered target");
             let size = Project::target_size(&project.target, None)?;
-            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), size_bytes = size, "cargo-cleaner: measured registered target");
+            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), size_bytes = size, "cargo-target-cleaner: measured registered target");
             if largest.is_none_or(|(_, largest_size)| size > largest_size) {
                 largest = Some((project, size));
             }
         }
         if let Some((project, size)) = largest {
-            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), size_bytes = size, elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-cleaner: selected largest target");
+            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, target = %project.target.display(), size_bytes = size, elapsed_seconds = started.elapsed().as_secs_f64(), "cargo-target-cleaner: selected largest target");
         } else {
             tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET,
-                "cargo-cleaner: no eligible registered targets; skipping free-space cleanup"
+                "cargo-target-cleaner: no eligible registered targets; skipping free-space cleanup"
             );
         }
         Ok(largest.map(|(project, _)| project))

@@ -1,4 +1,4 @@
-# cargo-cleaner
+# cargo-target-cleaner
 
 A Cargo wrapper that automatically frees disk space before build commands. It runs
 `cargo clean` when a target exceeds its size limit or free disk space falls below
@@ -10,19 +10,19 @@ Requires Cargo and a supported shell. Install a prebuilt binary for Linux or mac
 ARM64) using [cargo-binstall](https://github.com/cargo-bins/cargo-binstall):
 
 ```sh
-cargo binstall --git https://github.com/anotherempty/cargo-cleaner cargo-cleaner
+cargo binstall --git https://github.com/anotherempty/cargo-cleaner cargo-target-cleaner
 ```
 
 Or use the shell installer:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-cleaner/releases/latest/download/cargo-cleaner-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/anotherempty/cargo-cleaner/releases/latest/download/cargo-target-cleaner-installer.sh | sh
 ```
 
 Ensure `$CARGO_HOME/bin` (normally `~/.cargo/bin`) is on `PATH`, then run:
 
 ```sh
-cargo-cleaner init zsh
+cargo-target-cleaner init zsh
 ```
 
 Replace `zsh` with the argument for your shell from the table below, then open a
@@ -31,12 +31,12 @@ new session:
 | Shell | Argument | Integration file |
 | --- | --- | --- |
 | Bash | `bash` | `~/.bashrc` |
-| Cmd + Clink 1.6.11+ | `cmd` | `%CLINK_PROFILE%/cargo-cleaner.lua`, otherwise `%LOCALAPPDATA%/clink/cargo-cleaner.lua` |
+| Cmd + Clink 1.6.11+ | `cmd` | `%CLINK_PROFILE%/cargo-target-cleaner.lua`, otherwise `%LOCALAPPDATA%/clink/cargo-target-cleaner.lua` |
 | Elvish 0.21+ | `elvish` | `<config>/elvish/rc.elv` |
-| Fish | `fish` | `<config>/fish/conf.d/cargo-cleaner.fish` |
+| Fish | `fish` | `<config>/fish/conf.d/cargo-target-cleaner.fish` |
 | Ion | `ion` | `<config>/ion/initrc` |
 | Nushell | `nu` | `<config>/nushell/config.nu` |
-| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts` and adjacent `cargo-cleaner.ps1`, located using `pwsh` |
+| PowerShell 7.3+ | `powershell` | `$PROFILE.CurrentUserAllHosts` and adjacent `cargo-target-cleaner.ps1`, located using `pwsh` |
 | Tcsh | `tcsh` | `~/.tcshrc`, or existing `~/.cshrc` if `.tcshrc` is absent |
 | Xonsh | `xonsh` | `~/.xonshrc` |
 | Zsh | `zsh` | `$ZDOTDIR/.zshrc`, otherwise `~/.zshrc` |
@@ -50,12 +50,12 @@ user directory; prebuilt Windows distributions are not yet provided.
 Setup preserves the rest of your shell configuration and creates the default global
 cleanup config if missing. Existing `cargo` functions or aliases may be replaced; remove conflicting
 aliases in Bash, Zsh, or PowerShell first. IDEs invoking Cargo directly are unaffected.
-To remove integration, run `cargo-cleaner uninstall <shell>` and open a new session.
+To remove integration, run `cargo-target-cleaner uninstall <shell>` and open a new session.
 The binary and cleanup configs remain installed.
 
 ## Configuration
 
-Global settings live in `~/.cargo-cleaner.toml`. Setup creates only the
+Global settings live in `~/.cargo-target-cleaner.toml`. Setup creates only the
 `[free_space]` settings shown below; the other settings are optional:
 
 ```toml
@@ -78,7 +78,7 @@ across_projects = true
 Specify thresholds as positive whole numbers in GiB. Omit `[free_space]` to disable
 free-space cleanup and project registration. Existing config files are preserved during setup.
 
-For a project-specific size limit, add `.cargo-cleaner.toml` at the project root:
+For a project-specific size limit, add `.cargo-target-cleaner.toml` at the project root:
 
 ```toml
 max_target_size_gib = 10
@@ -96,7 +96,7 @@ global setting when omitted.
    `rustdoc`, the wrapper asks Cargo for the workspace and target directory.
    Standard single-letter aliases are supported; other commands pass through.
 2. With cross-project cleanup enabled, existing targets are recorded in
-   `~/.cargo-cleaner/projects.toml`, grouped by target filesystem. Projects are
+   `~/.cargo-target-cleaner/projects.toml`, grouped by target filesystem. Projects are
    discovered as you use the wrapper, without scanning your disk. Each registry
    update refreshes filesystem identities, removes missing projects or targets,
    and deduplicates shared target directories.
@@ -131,7 +131,7 @@ On macOS or Windows, install the relevant shells and run
 Run unit and cleanup tests, formatting, and Clippy locally:
 
 ```sh
-cargo test --bin cargo-cleaner --test cleanup
+cargo test --bin cargo-target-cleaner --test cleanup
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 ```

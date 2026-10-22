@@ -25,7 +25,7 @@ impl Shell for Cmd {
 }
 
 impl Cmd {
-    const CMD_INIT: &str = "if not os.setalias('cargo', 'cargo-cleaner exec -- $*') then\n    error('cargo-cleaner: cannot set cargo alias')\nend\n";
+    const CMD_INIT: &str = "if not os.setalias('cargo', 'cargo-target-cleaner exec -- $*') then\n    error('cargo-target-cleaner: cannot set cargo alias')\nend\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let directory = std::env::var_os("CLINK_PROFILE")
@@ -37,7 +37,7 @@ impl Cmd {
                     .map(|directory| PathBuf::from(directory).join("clink"))
             })
             .ok_or(Error::MissingClinkDirectory)?;
-        let path = directory.join("cargo-cleaner.lua");
+        let path = directory.join("cargo-target-cleaner.lua");
         ShellConfig::update(&path, Self::CMD_INIT, action)?;
         Ok(path)
     }

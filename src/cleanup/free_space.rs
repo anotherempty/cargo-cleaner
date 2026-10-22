@@ -40,13 +40,13 @@ impl FreeSpacePolicy {
             target = %target.display(),
             available_bytes = available,
             minimum_bytes = self.limit.get(),
-            "cargo-cleaner: checked free disk space"
+            "cargo-target-cleaner: checked free disk space"
         );
         if available >= self.limit.get() {
-            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: free space is sufficient; skipping free-space cleanup");
+            tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-target-cleaner: free space is sufficient; skipping free-space cleanup");
             return Ok(());
         }
-        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-cleaner: free space is below minimum; selecting a target to clean");
+        tracing::info!(target: crate::diagnostics::Diagnostics::PROGRESS_TARGET, "cargo-target-cleaner: free space is below minimum; selecting a target to clean");
         match &self.selection {
             Selection::Current => {
                 Cleanup::clean(invocation.command(CargoOperation::Clean), target)?

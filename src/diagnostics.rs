@@ -3,7 +3,7 @@ use tracing_subscriber::prelude::*;
 pub(crate) struct Diagnostics;
 
 impl Diagnostics {
-    pub(crate) const PROGRESS_TARGET: &str = "cargo_cleaner::progress";
+    pub(crate) const PROGRESS_TARGET: &str = "cargo_target_cleaner::progress";
 
     pub(crate) fn subscriber(verbose: bool) -> impl tracing::Subscriber + Send + Sync {
         tracing_subscriber::registry()

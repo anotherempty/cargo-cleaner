@@ -25,7 +25,7 @@ impl Shell for Ion {
 }
 
 impl Ion {
-    const ION_INIT: &str = "alias cargo = \"cargo-cleaner exec --\"\n";
+    const ION_INIT: &str = "alias cargo = \"cargo-target-cleaner exec --\"\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let path = ShellConfig::config_home()?.join("ion/initrc");

@@ -26,8 +26,8 @@ impl Shell for PowerShell {
 }
 
 impl PowerShell {
-    const POWERSHELL_INIT: &str = "Set-Alias -Name cargo -Value (Join-Path $PSScriptRoot 'cargo-cleaner.ps1') -Scope Global\n";
-    const POWERSHELL_WRAPPER: &str = "if ($MyInvocation.ExpectingInput) {\n    $input | & (Get-Command cargo-cleaner -CommandType Application -TotalCount 1 -ErrorAction Stop) exec -- @args\n} else {\n    & (Get-Command cargo-cleaner -CommandType Application -TotalCount 1 -ErrorAction Stop) exec -- @args\n}\nexit $LASTEXITCODE\n";
+    const POWERSHELL_INIT: &str = "Set-Alias -Name cargo -Value (Join-Path $PSScriptRoot 'cargo-target-cleaner.ps1') -Scope Global\n";
+    const POWERSHELL_WRAPPER: &str = "if ($MyInvocation.ExpectingInput) {\n    $input | & (Get-Command cargo-target-cleaner -CommandType Application -TotalCount 1 -ErrorAction Stop) exec -- @args\n} else {\n    & (Get-Command cargo-target-cleaner -CommandType Application -TotalCount 1 -ErrorAction Stop) exec -- @args\n}\nexit $LASTEXITCODE\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let output = Command::new("pwsh")
@@ -51,7 +51,7 @@ impl PowerShell {
             return Err(Error::EmptyPowerShellProfile);
         }
         let path = PathBuf::from(profile);
-        let wrapper = path.with_file_name("cargo-cleaner.ps1");
+        let wrapper = path.with_file_name("cargo-target-cleaner.ps1");
         ShellConfig::update(&wrapper, Self::POWERSHELL_WRAPPER, action)?;
         ShellConfig::update(&path, Self::POWERSHELL_INIT, action)?;
         Ok(path)

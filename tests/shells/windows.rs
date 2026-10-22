@@ -33,7 +33,7 @@ impl Fixture {
             .output()?;
         assert!(output.status.success(), "{output:?}");
         let powershell = PathBuf::from(String::from_utf8(output.stdout)?);
-        fs::write(root.join(".cargo-cleaner.toml"), "")?;
+        fs::write(root.join(".cargo-target-cleaner.toml"), "")?;
         fs::write(
             root.join("helper.rs"),
             include_str!("../fixtures/shell-cargo.rs"),
@@ -47,8 +47,8 @@ impl Fixture {
         assert!(output.status.success(), "{output:?}");
         fs::copy(root.join("cargo.exe"), root.join("pwsh.exe"))?;
         fs::copy(
-            env!("CARGO_BIN_EXE_cargo-cleaner"),
-            root.join("cargo-cleaner.exe"),
+            env!("CARGO_BIN_EXE_cargo-target-cleaner"),
+            root.join("cargo-target-cleaner.exe"),
         )?;
         Ok(Self {
             directory,
@@ -76,7 +76,7 @@ impl Fixture {
 
     fn configure(&self, action: &str, shell: &str) -> Result<(), FixtureError> {
         let output = self
-            .command(env!("CARGO_BIN_EXE_cargo-cleaner"))?
+            .command(env!("CARGO_BIN_EXE_cargo-target-cleaner"))?
             .args([action, shell])
             .output()?;
         assert!(output.status.success(), "{output:?}");
@@ -133,7 +133,7 @@ fn powershell_lifecycle_arguments_status_and_stdin() {
         fixture.configure(action, "powershell").unwrap();
         assert_eq!(fs::read_to_string(&profile).unwrap(), original);
         assert!(
-            fs::read(fixture.directory.path().join("cargo-cleaner.ps1"))
+            fs::read(fixture.directory.path().join("cargo-target-cleaner.ps1"))
                 .unwrap()
                 .is_empty()
         );
@@ -170,14 +170,17 @@ fn nushell_lifecycle_and_forwarding() {
 #[test]
 fn cmd_clink_configuration_is_repeatable_and_preserves_user_content() {
     let fixture = Fixture::new().unwrap();
-    let config = fixture.directory.path().join("clink/cargo-cleaner.lua");
+    let config = fixture
+        .directory
+        .path()
+        .join("clink/cargo-target-cleaner.lua");
     fs::create_dir_all(config.parent().unwrap()).unwrap();
     let original = "-- preserved config\n";
     fs::write(&config, original).unwrap();
     fixture.configure("init", "cmd").unwrap();
     let installed = fs::read_to_string(&config).unwrap();
     assert!(installed.starts_with(original));
-    assert!(installed.contains("os.setalias('cargo', 'cargo-cleaner exec -- $*')"));
+    assert!(installed.contains("os.setalias('cargo', 'cargo-target-cleaner exec -- $*')"));
     fixture.configure("init", "cmd").unwrap();
     assert_eq!(fs::read_to_string(&config).unwrap(), installed);
     for action in ["uninstall", "uninstall"] {

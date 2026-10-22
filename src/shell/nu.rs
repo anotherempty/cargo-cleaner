@@ -26,7 +26,7 @@ impl Shell for Nu {
 
 impl Nu {
     const NU_INIT: &str =
-        "def --wrapped cargo [...args] {\n    ^cargo-cleaner exec -- ...$args\n}\n";
+        "def --wrapped cargo [...args] {\n    ^cargo-target-cleaner exec -- ...$args\n}\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let directory = ShellConfig::config_home()?;

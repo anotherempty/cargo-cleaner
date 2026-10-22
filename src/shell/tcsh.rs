@@ -25,7 +25,7 @@ impl Shell for Tcsh {
 }
 
 impl Tcsh {
-    const TCSH_INIT: &str = "alias cargo 'cargo-cleaner exec --'\n";
+    const TCSH_INIT: &str = "alias cargo 'cargo-target-cleaner exec --'\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let home = std::env::var_os("HOME")

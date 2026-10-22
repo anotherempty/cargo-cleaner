@@ -25,7 +25,7 @@ impl Shell for Elvish {
 }
 
 impl Elvish {
-    const ELVISH_INIT: &str = "fn cargo {|@args| e:cargo-cleaner exec -- $@args }\n";
+    const ELVISH_INIT: &str = "fn cargo {|@args| e:cargo-target-cleaner exec -- $@args }\n";
 
     fn configure(&self, action: Action) -> Result<PathBuf, Error> {
         let path = ShellConfig::config_home()?.join("elvish/rc.elv");
